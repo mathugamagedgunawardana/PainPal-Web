@@ -1,4 +1,5 @@
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
+import { MigrainerChart } from "@/components/migraine-chart"
 import { DataTable } from "@/components/data-table"
 import { SectionCards } from "@/components/section-cards"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -161,7 +162,7 @@ export default function DoctorOverviewPage() {
               <CardDescription>Active patients and risk levels over the past 6 months</CardDescription>
             </CardHeader>
             <CardContent>
-              <ChartAreaInteractive />
+              <MigrainerChart />
             </CardContent>
           </Card>
         </div>

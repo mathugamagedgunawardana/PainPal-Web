@@ -2,21 +2,21 @@
 
 import * as React from "react"
 import {
-  IconCamera,
+  IconBrain,
   IconChartBar,
   IconDashboard,
   IconDatabase,
   IconFileAi,
   IconFileDescription,
-  IconFileWord,
-  IconFolder,
+  IconCalendar,
+  IconUsers,
+  IconPill,
   IconHelp,
-  IconInnerShadowTop,
-  IconListDetails,
   IconReport,
   IconSearch,
   IconSettings,
-  IconUsers,
+  IconAlertTriangle,
+  IconStethoscope,
 } from "@tabler/icons-react"
 
 import { NavDocuments } from "@/components/nav-documents"
@@ -35,80 +35,80 @@ import {
 
 const data = {
   user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
+    name: "Dr. Sarah Johnson",
+    email: "dr.johnson@migrainecare.com",
+    avatar: "/avatars/doctor.jpg",
   },
   navMain: [
     {
-      title: "Dashboard",
-      url: "#",
+      title: "Overview",
+      url: "/doctor/overview",
       icon: IconDashboard,
     },
     {
-      title: "Lifecycle",
-      url: "#",
-      icon: IconListDetails,
+      title: "Patients",
+      url: "/doctor/patients",
+      icon: IconUsers,
     },
     {
       title: "Analytics",
-      url: "#",
+      url: "/doctor/analytics", 
       icon: IconChartBar,
     },
     {
-      title: "Projects",
-      url: "#",
-      icon: IconFolder,
+      title: "Risk Assessment",
+      url: "/doctor/risk",
+      icon: IconAlertTriangle,
     },
     {
-      title: "Team",
-      url: "#",
-      icon: IconUsers,
+      title: "Treatment Plans",
+      url: "/doctor/treatments",
+      icon: IconStethoscope,
     },
   ],
   navClouds: [
     {
-      title: "Capture",
-      icon: IconCamera,
+      title: "Patient Records",
+      icon: IconFileDescription,
       isActive: true,
       url: "#",
       items: [
         {
-          title: "Active Proposals",
+          title: "Active Cases",
           url: "#",
         },
         {
-          title: "Archived",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Proposal",
-      icon: IconFileDescription,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
+          title: "Treatment History", 
           url: "#",
         },
       ],
     },
     {
-      title: "Prompts",
-      icon: IconFileAi,
+      title: "Migraine Episodes",
+      icon: IconBrain,
       url: "#",
       items: [
         {
-          title: "Active Proposals",
+          title: "Recent Episodes",
           url: "#",
         },
         {
-          title: "Archived",
+          title: "Episode Analysis",
+          url: "#",
+        },
+      ],
+    },
+    {
+      title: "Medication Tracking",
+      icon: IconPill,
+      url: "#", 
+      items: [
+        {
+          title: "Current Prescriptions",
+          url: "#",
+        },
+        {
+          title: "Adherence Monitoring",
           url: "#",
         },
       ],
@@ -121,31 +121,36 @@ const data = {
       icon: IconSettings,
     },
     {
-      title: "Get Help",
+      title: "Help & Support",
       url: "#",
       icon: IconHelp,
     },
     {
-      title: "Search",
+      title: "Search Patients",
       url: "#",
       icon: IconSearch,
     },
   ],
   documents: [
     {
-      name: "Data Library",
+      name: "Patient Database",
       url: "#",
       icon: IconDatabase,
     },
     {
-      name: "Reports",
+      name: "Clinical Reports",
       url: "#",
       icon: IconReport,
     },
     {
-      name: "Word Assistant",
+      name: "AI Predictions",
       url: "#",
-      icon: IconFileWord,
+      icon: IconFileAi,
+    },
+    {
+      name: "Appointment Calendar",
+      url: "#",
+      icon: IconCalendar,
     },
   ],
 }
@@ -158,11 +163,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              className="data-[slot=sidebar-menu-button]:!p-1.5"
+              className="data-[slot=sidebar-menu-button]:p-1.5!"
             >
-              <a href="#">
-                <IconInnerShadowTop className="!size-5" />
-                <span className="text-base font-semibold">Acme Inc.</span>
+              <a href="/doctor/overview">
+                <IconBrain className="size-5!" />
+                <span className="text-base font-semibold">MigraineCare</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
