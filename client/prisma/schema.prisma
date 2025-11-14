@@ -1,0 +1,181 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// 1. Define the datasource (MongoDB)
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// 2. Define the generator
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ----------------------------------------------
+// ENUMERATIONS
+// ----------------------------------------------
+
+enum Role {
+  PATIENT
+  DOCTOR
+}
+
+enum LinkStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+enum MedicationType {
+  PREVENTIVE
+  RESCUE
+}
+
+enum SummaryType {
+  WEEKLY
+  MONTHLY
+}
+
+enum RiskAlertLevel {
+  NONE
+  MEDIUM
+  HIGH
+}
+
+// ----------------------------------------------
+// CORE AUTHENTICATION & PROFILE MODELS
+// ----------------------------------------------
+
+// Central User model for authentication
+model User {
+  id              String           @id @default(auto()) @map("_id") @db.ObjectId
+  email           String           @unique
+  passwordHash    String
+  role            Role
+  createdAt       DateTime         @default(now())
+  
+  // Relations
+  patientProfile  PatientProfile?
+  doctorProfile   DoctorProfile?
+}
+
+model DoctorProfile {
+  id              String           @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String           @unique @db.ObjectId
+  user            User             @relation(fields: [userId], references: [id])
+  name            String
+  specialization  String
+  
+  clinicId        String           @db.ObjectId
+  clinic          Clinic           @relation(fields: [clinicId], references: [id])
+  
+  // Relations
+  patientLinks    PatientDoctorLink[]
+  summaries       DoctorPatientSummary[]
+}
+
+model Clinic {
+  id                String          @id @default(auto()) @map("_id") @db.ObjectId
+  name              String
+  address           String
+  ehrSystemEndpoint String?         // For EHR integration 
+  
+  // Relations
+  doctors           DoctorProfile[]
+}
+
+model PatientProfile {
+  id            String           @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String           @unique @db.ObjectId
+  user          User             @relation(fields: [userId], references: [id])
+  name          String
+  dob           DateTime
+  ehrRecordId   String?          // For EHR integration 
+  
+  // Relations
+  doctorLinks     PatientDoctorLink[]
+  migraineEvents  MigraineEvent[]
+  medicationLogs  MedicationLog[]
+  summaries       DoctorPatientSummary[]
+  insights        AIDiagnosticInsight[]
+}
+
+// ----------------------------------------------
+// LINKING & DATA MODELS (Doctor-Facing)
+// ----------------------------------------------
+
+// Explicit many-to-many relationship table
+model PatientDoctorLink {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  doctorId    String      @db.ObjectId
+  doctor      DoctorProfile @relation(fields: [doctorId], references: [id])
+  
+  patientId   String      @db.ObjectId
+  patient     PatientProfile @relation(fields: [patientId], references: [id])
+  
+  linkStatus  LinkStatus
+  createdAt   DateTime    @default(now())
+
+  @@unique([doctorId, patientId]) // Ensure link only exists once
+}
+
+// Patient-logged event, viewable by doctor
+model MigraineEvent {
+  id                 String         @id @default(auto()) @map("_id") @db.ObjectId
+  patientId          String         @db.ObjectId
+  patient            PatientProfile @relation(fields: [patientId], references: [id])
+  
+  startDatetime      DateTime
+  severity           Int            // 
+  symptomsLog        String         // Could be JSON string
+  perceivedTriggers  String?        // Patient-reported triggers
+}
+
+// Patient-logged medication, viewable by doctor
+model MedicationLog {
+  id                 String          @id @default(auto()) @map("_id") @db.ObjectId
+  patientId          String          @db.ObjectId
+  patient            PatientProfile  @relation(fields: [patientId], references: [id])
+  
+  medicationName     String
+  medicationType     MedicationType  // 
+  datetimeTaken      DateTime
+  dosage             String
+}
+
+// ----------------------------------------------
+// AI-GENERATED DOCTOR SUPPORT MODELS
+// ----------------------------------------------
+
+// Structured summaries for the doctor dashboard 
+model DoctorPatientSummary {
+  id                        String         @id @default(auto()) @map("_id") @db.ObjectId
+  patientId                 String         @db.ObjectId
+  patient                   PatientProfile @relation(fields: [patientId], references: [id], name: "patientSummaries")
+  
+  doctorId                  String         @db.ObjectId
+  doctor                    DoctorProfile  @relation(fields: [doctorId], references: [id], name: "doctorSummaries")
+  
+  generatedDate             DateTime       @default(now())
+  summaryType               SummaryType    // e.g., 'WEEKLY'
+  structuredSummaryText     String
+  avgFrequency              Float
+  avgSeverity               Float
+  adherenceScore            Float          // 
+  treatmentOutcomeAnalysis  String
+  
+  @@unique([patientId, doctorId, generatedDate])
+}
+
+// AI-generated insights and alerts 
+model AIDiagnosticInsight {
+  id                     String         @id @default(auto()) @map("_id") @db.ObjectId
+  patientId              String         @db.ObjectId
+  patient                PatientProfile @relation(fields: [patientId], references: [id])
+  
+  createdDatetime        DateTime       @default(now())
+  diagnosticProbability  Float?         // 
+  riskAlertLevel         RiskAlertLevel // 
+  keyContributors        String[]       // e.g., ["Weather", "Sleep", "Stress"]
+}
