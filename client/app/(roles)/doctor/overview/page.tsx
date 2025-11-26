@@ -167,7 +167,7 @@ export default function DoctorDashboard() {
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Header */}
-        <div className="flex items-center justify-between">
+        {/* <div className="flex items-center justify-between">
           <div className="space-y-1">
             <h1 className="text-3xl font-bold text-gray-900">Good Morning, Doctor!</h1>
             <p className="text-gray-600">Here's what's happening with your patients today</p>
@@ -203,7 +203,7 @@ export default function DoctorDashboard() {
               <AvatarFallback className="bg-blue-100 text-blue-700">DJ</AvatarFallback>
             </Avatar>
           </div>
-        </div>
+        </div> */}
 
         {/* Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

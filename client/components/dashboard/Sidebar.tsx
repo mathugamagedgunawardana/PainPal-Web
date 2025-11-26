@@ -76,7 +76,7 @@ export default function Sidebar({ activeItem, userRole = 'doctor', userName = 'D
   };
   
   return (
-    <div className="w-20 lg:w-64 bg-white/80 backdrop-blur-sm border-r border-gray-200 h-screen flex flex-col">
+    <div className="w-20 lg:w-64 bg-white/80 backdrop-blur-sm border-r border-gray-200 h-screen flex flex-col sticky top-0">
       {/* Logo */}
       <div className="p-6 flex items-center justify-center lg:justify-start">
         <Link href={`/${userRole}/overview`} className="flex items-center">
