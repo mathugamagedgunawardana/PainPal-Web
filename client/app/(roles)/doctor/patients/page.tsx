@@ -151,7 +151,7 @@ export default function PatientsPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-teal-50 p-8 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* <div className="flex items-center justify-between">
         <div>
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Patient Management</h1>
           <p className="text-gray-600 mt-1">Manage and monitor your migraine patients</p>
@@ -160,11 +160,11 @@ export default function PatientsPage() {
           <UserPlus className="mr-2 w-5 h-5" />
           Add New Patient
         </Button>
-      </div>
+      </div> */}
 
       {/* Search and Filters */}
       <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
-        <CardContent className="p-6">
+        <CardContent className="">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -267,7 +267,7 @@ export default function PatientsPage() {
         {/* Patient Profile Details */}
         <div className="lg:col-span-2">
           {selectedPatient ? (
-            <div className="space-y-6">
+            <div className="space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto pr-2">
               {/* Profile Header */}
               <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
                 <CardContent className="p-6">
