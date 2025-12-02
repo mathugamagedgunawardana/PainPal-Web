@@ -35,10 +35,10 @@ const navigationByRole = {
     { icon: Home, label: 'Overview', id: 'overview', href: '/doctor/overview' },
     { icon: Users, label: 'Patients', id: 'patients', href: '/doctor/patients' },
     { icon: Activity, label: 'Analytics', id: 'analytics', href: '/doctor/analytics' },
-    { icon: BarChart3, label: 'Risk Assessment', id: 'risk', href: '/doctor/risk' },
-    { icon: FileText, label: 'Treatments', id: 'treatments', href: '/doctor/treatments' },
+    // { icon: BarChart3, label: 'Risk Assessment', id: 'risk', href: '/doctor/risk' },
+    // { icon: FileText, label: 'Treatments', id: 'treatments', href: '/doctor/treatments' },
     { icon: Settings, label: 'Settings', id: 'settings', href: '/doctor/settings' },
-    { icon: Bell, label: 'Notifications', id: 'notifications', href: '/doctor/notifications' },
+    // { icon: Bell, label: 'Notifications', id: 'notifications', href: '/doctor/notifications' },
   ],
   patient: [
     { icon: Home, label: 'Overview', id: 'overview', href: '/patient/overview' },

@@ -149,7 +149,7 @@ export default function PatientsPage() {
   })
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-teal-50 p-8 space-y-6">
+    <div className="min-h-screen bg-gradient-to-br  via-purple-50 to-teal-50 p-8 space-y-6">
       {/* Header */}
       {/* <div className="flex items-center justify-between">
         <div>
