@@ -211,18 +211,18 @@ export default function PatientsPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
         {/* Patient List */}
-        <div className="lg:col-span-1 space-y-4">
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-800">Patients ({filteredPatients.length})</h2>
             <Badge variant="secondary" className="text-sm">{filteredPatients.length} Total</Badge>
           </div>
-          <div className="space-y-3 max-h-[calc(100vh-300px)] overflow-y-auto pr-2">
+          <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-y-auto pr-2">
             {filteredPatients.map((patient) => (
               <Card
                 key={patient.id}
-                className={`cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] ${
+                className={`w-full max-w-sm cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] ${
                   selectedPatient?.id === patient.id
                     ? 'border-2 border-purple-500 bg-gradient-to-br from-blue-50 to-purple-50 shadow-lg'
                     : 'border border-gray-200 bg-white/80 backdrop-blur-sm'
@@ -265,7 +265,7 @@ export default function PatientsPage() {
         </div>
 
         {/* Patient Profile Details */}
-        <div className="lg:col-span-2">
+        <div className="w-full">
           {selectedPatient ? (
             <div className="space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto pr-2">
               {/* Profile Header */}
