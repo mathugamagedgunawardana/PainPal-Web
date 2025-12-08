@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@livekit/agents": "^1.0.24",
+    "@livekit/rtc-node": "^0.13.21"
+  }
+}

@@ -3,13 +3,32 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 import google.generativeai as genai
 import os
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
 
 load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
+
+# ---------- Database Configuration (MySQL with fallback) ----------
+database_url = os.getenv("DATABASE_URL")
+
+if not database_url:
+    mysql_user = os.getenv("MYSQL_USER", "root")
+    mysql_password = os.getenv("MYSQL_PASSWORD", "")
+    mysql_host = os.getenv("MYSQL_HOST", "127.0.0.1")
+    mysql_port = os.getenv("MYSQL_PORT", "3306")
+    mysql_db = os.getenv("MYSQL_DB", "app")
+    # URL-encode password to safely handle special characters
+    database_url = (
+        f"mysql+pymysql://{mysql_user}:{quote_plus(mysql_password)}@{mysql_host}:{mysql_port}/{mysql_db}"
+    ) if os.getenv("USE_MYSQL", "1") == "1" else "sqlite:///app.db"
+
+app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
+
 db = SQLAlchemy(app)
 
 
@@ -78,4 +97,11 @@ def chat():
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
+    # Ensure models are created in the configured database
+    with app.app_context():
+        try:
+            db.create_all()
+        except Exception as e:
+            # Avoid crashing on startup; surface the error in logs
+            print(f"DB init error: {e}")
     app.run(debug=True)
