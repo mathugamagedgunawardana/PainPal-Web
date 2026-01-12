@@ -1,9 +1,16 @@
 'use client';
 
 import React from 'react';
-import { Search, Bell } from 'lucide-react';
+import { Search, Bell, LogOut, User } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 interface HeaderProps {
   userName?: string;
@@ -16,6 +23,8 @@ export default function Header({
   userEmail = "k.johnson@school.edu",
   userAvatar = ""
 }: HeaderProps) {
+  const { logout } = useAuth();
+
   const currentDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -24,7 +33,7 @@ export default function Header({
   });
 
   return (
-    <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 px-4 md:px-6 py-3 md:py-4">
+    <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 px-4 md:px-6 py-3 md:py-4 relative z-40">
       <div className="flex items-center justify-between">
         {/* Greeting Section */}
         <div className="flex-1 min-w-0">
@@ -62,18 +71,38 @@ export default function Header({
           </div>
 
           {/* User Profile */}
-          <div className="flex items-center space-x-2 sm:space-x-3 bg-gray-100/80 rounded-xl px-2 sm:px-4 py-2">
-            <Avatar className="w-7 h-7 sm:w-8 sm:h-8">
-              <AvatarImage src={userAvatar} alt={userName} />
-              <AvatarFallback className="bg-linear-to-br from-blue-500 to-purple-600 text-white text-xs sm:text-sm">
-                {userName.split(' ').map(n => n[0]).join('')}
-              </AvatarFallback>
-            </Avatar>
-            <div className="hidden md:block">
-              <p className="font-medium text-gray-800 text-sm">{userName}</p>
-              <p className="text-xs text-gray-600">{userEmail}</p>
-            </div>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center space-x-2 sm:space-x-3 bg-gray-100/80 rounded-xl px-2 sm:px-4 py-2 focus:outline-none">
+                <Avatar className="w-7 h-7 sm:w-8 sm:h-8">
+                  <AvatarImage src={userAvatar} alt={userName} />
+                  <AvatarFallback className="bg-linear-to-br from-blue-500 to-purple-600 text-white text-xs sm:text-sm">
+                    {userName.split(' ').map(n => n[0]).join('')}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="hidden md:block text-left">
+                  <p className="font-medium text-gray-800 text-sm">{userName}</p>
+                  <p className="text-xs text-gray-600">{userEmail}</p>
+                </div>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <div className="px-4 py-2 text-sm">
+                <div className="font-semibold">{userName}</div>
+                <div className="text-xs text-gray-500">{userEmail}</div>
+              </div>
+              <div className="my-1 h-px bg-gray-200" />
+              <DropdownMenuItem className="gap-2">
+                <User className="h-4 w-4 text-gray-500" />
+                Profile
+              </DropdownMenuItem>
+              <div className="my-1 h-px bg-gray-200" />
+              <DropdownMenuItem className="gap-2 text-red-600" onClick={logout}>
+                <LogOut className="h-4 w-4" />
+                Logout
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </header>
