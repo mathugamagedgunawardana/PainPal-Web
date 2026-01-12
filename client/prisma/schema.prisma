@@ -156,6 +156,7 @@ model AIDiagnosticInsight {
 // ----------------------------------------------
 
 enum Role {
+  ADMIN
   PATIENT
   DOCTOR
 }

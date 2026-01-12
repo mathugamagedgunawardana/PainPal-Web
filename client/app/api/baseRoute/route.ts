@@ -5,18 +5,15 @@ const prisma = new PrismaClient();
 
 type ModelName =
   | 'user'
-  | 'admin'
-  | 'teacher'
-  | 'student'
-  | 'class'
-  | 'subject'
-  | 'lesson'
-  | 'attendance'
-  | 'grade'
-  | 'assignment'
-  | 'note'
-  | 'event'
-  | 'notification';
+  // Healthcare domain models
+  | 'doctorProfile'
+  | 'patientProfile'
+  | 'clinic'
+  | 'patientDoctorLink'
+  | 'migraineEvent'
+  | 'medicationLog'
+  | 'doctorPatientSummary'
+  | 'aIDiagnosticInsight';
 
 export async function baseCrudHandler(model: ModelName, req: NextRequest) {
   const { method, url } = req;

@@ -1,8 +1,8 @@
-// filepath: /home/ranith/Documents/Projects/LLM/client/app/(auth)/signin/page.tsx
 'use client'
 
 import React, { useState } from 'react'
 import Link from 'next/link'
+import { useAuth } from '@/lib/auth/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Brain, Eye, EyeOff, Mail, Lock, AlertCircle } from 'lucide-react'
 
 export default function SignInPage() {
+  const { login } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -21,12 +22,13 @@ export default function SignInPage() {
     setIsLoading(true)
     setError('')
 
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      await login(email, password)
+      // Redirect happens in AuthContext based on role
+    } catch (err: any) {
+      setError(err.message || 'Invalid email or password')
       setIsLoading(false)
-      // For demo purposes, redirect to doctor dashboard
-      window.location.href = '/doctor/overview'
-    }, 1500)
+    }
   }
 
   return (
