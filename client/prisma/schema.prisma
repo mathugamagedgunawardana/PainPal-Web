@@ -12,36 +12,6 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// ----------------------------------------------
-// ENUMERATIONS
-// ----------------------------------------------
-
-enum Role {
-  PATIENT
-  DOCTOR
-}
-
-enum LinkStatus {
-  PENDING
-  ACTIVE
-  REVOKED
-}
-
-enum MedicationType {
-  PREVENTIVE
-  RESCUE
-}
-
-enum SummaryType {
-  WEEKLY
-  MONTHLY
-}
-
-enum RiskAlertLevel {
-  NONE
-  MEDIUM
-  HIGH
-}
 
 // ----------------------------------------------
 // CORE AUTHENTICATION & PROFILE MODELS
@@ -72,7 +42,7 @@ model DoctorProfile {
   
   // Relations
   patientLinks    PatientDoctorLink[]
-  summaries       DoctorPatientSummary[]
+  summaries       DoctorPatientSummary[] @relation("doctorSummaries")
 }
 
 model Clinic {
@@ -97,7 +67,7 @@ model PatientProfile {
   doctorLinks     PatientDoctorLink[]
   migraineEvents  MigraineEvent[]
   medicationLogs  MedicationLog[]
-  summaries       DoctorPatientSummary[]
+  summaries       DoctorPatientSummary[] @relation("patientSummaries")
   insights        AIDiagnosticInsight[]
 }
 
@@ -178,4 +148,36 @@ model AIDiagnosticInsight {
   diagnosticProbability  Float?         // 
   riskAlertLevel         RiskAlertLevel // 
   keyContributors        String[]       // e.g., ["Weather", "Sleep", "Stress"]
+}
+
+
+// ----------------------------------------------
+// ENUMERATIONS
+// ----------------------------------------------
+
+enum Role {
+  PATIENT
+  DOCTOR
+}
+
+enum LinkStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+enum MedicationType {
+  PREVENTIVE
+  RESCUE
+}
+
+enum SummaryType {
+  WEEKLY
+  MONTHLY
+}
+
+enum RiskAlertLevel {
+  NONE
+  MEDIUM
+  HIGH
 }

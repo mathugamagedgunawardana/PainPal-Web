@@ -160,8 +160,6 @@ const MigraineDashboard: React.FC = () => {
               endAngle={-180}
             >
               <RadialBar
-                minAngle={15}
-                clockWise
                 dataKey="value"
                 cornerRadius={8}
               />
