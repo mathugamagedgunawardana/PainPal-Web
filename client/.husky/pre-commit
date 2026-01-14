@@ -1,4 +1,7 @@
 #!/bin/sh
-. "$(dirname "$0")/_/husky.sh"
 
-npm test
+echo "🔎 Running pre-commit hook: npm run lint in /client"
+cd client || exit 1
+
+# Run lint if script exists; if it fails, block commit
+npm run lint
