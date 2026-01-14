@@ -43,6 +43,10 @@ model DoctorProfile {
   // Relations
   patientLinks    PatientDoctorLink[]
   summaries       DoctorPatientSummary[] @relation("doctorSummaries")
+  medicationGroups MedicationGroup[]
+  appointments    Appointment[]
+  clinicalNotes   ClinicalNote[]
+  communications  Communication[]
 }
 
 model Clinic {
@@ -61,14 +65,24 @@ model PatientProfile {
   user          User             @relation(fields: [userId], references: [id])
   name          String
   dob           DateTime
+  gender        String?          // 'Male', 'Female', 'Other'
+  phone         String?
+  email         String?
+  address       String?
+  condition     String?          // e.g., "Chronic Migraine with Aura"
   ehrRecordId   String?          // For EHR integration 
+  createdAt     DateTime         @default(now())
   
   // Relations
   doctorLinks     PatientDoctorLink[]
   migraineEvents  MigraineEvent[]
   medicationLogs  MedicationLog[]
+  medicationGroups MedicationGroup[]
   summaries       DoctorPatientSummary[] @relation("patientSummaries")
   insights        AIDiagnosticInsight[]
+  appointments    Appointment[]
+  clinicalNotes   ClinicalNote[]
+  communications  Communication[]
 }
 
 // ----------------------------------------------
@@ -97,9 +111,17 @@ model MigraineEvent {
   patient            PatientProfile @relation(fields: [patientId], references: [id])
   
   startDatetime      DateTime
-  severity           Int            // 
-  symptomsLog        String         // Could be JSON string
-  perceivedTriggers  String?        // Patient-reported triggers
+  severity           Int            // 1-10 scale
+  duration           String?        // e.g., "6 hours", "4 hours"
+  symptomsLog        String         // Could be JSON string for detailed symptoms
+  perceivedTriggers  String?        // Patient-reported triggers (comma-separated or JSON)
+  
+  // Medication Group & Effectiveness Tracking
+  medicationGroupId  String?        @db.ObjectId
+  medicationGroup    MedicationGroup? @relation(fields: [medicationGroupId], references: [id])
+  effectiveness      MedicationEffectiveness? // How effective the medication was
+  
+  createdAt          DateTime       @default(now())
 }
 
 // Patient-logged medication, viewable by doctor
@@ -108,10 +130,16 @@ model MedicationLog {
   patientId          String          @db.ObjectId
   patient            PatientProfile  @relation(fields: [patientId], references: [id])
   
+  medicationGroupId  String?         @db.ObjectId
+  medicationGroup    MedicationGroup? @relation(fields: [medicationGroupId], references: [id])
+  
   medicationName     String
-  medicationType     MedicationType  // 
+  medicationType     MedicationType  // PREVENTIVE, RESCUE
   datetimeTaken      DateTime
   dosage             String
+  frequency          String?         // e.g., "Daily", "As needed"
+  adherenceRate      Float?          // Percentage: 0-100
+  createdAt          DateTime        @default(now())
 }
 
 // ----------------------------------------------
@@ -150,6 +178,77 @@ model AIDiagnosticInsight {
   keyContributors        String[]       // e.g., ["Weather", "Sleep", "Stress"]
 }
 
+// Doctor appointment with patient
+model Appointment {
+  id               String          @id @default(auto()) @map("_id") @db.ObjectId
+  patientId        String          @db.ObjectId
+  patient          PatientProfile  @relation(fields: [patientId], references: [id])
+  
+  doctorId         String          @db.ObjectId
+  doctor           DoctorProfile   @relation(fields: [doctorId], references: [id])
+  
+  appointmentDate  DateTime
+  appointmentType  String          // e.g., "Follow-up", "Regular Check-up", "Initial Consultation"
+  status           AppointmentStatus  // SCHEDULED, COMPLETED, CANCELLED
+  notes            String?
+  createdAt        DateTime        @default(now())
+}
+
+// Clinical notes written by doctors
+model ClinicalNote {
+  id               String          @id @default(auto()) @map("_id") @db.ObjectId
+  patientId        String          @db.ObjectId
+  patient          PatientProfile  @relation(fields: [patientId], references: [id])
+  
+  doctorId         String          @db.ObjectId
+  doctor           DoctorProfile   @relation(fields: [doctorId], references: [id])
+  
+  noteContent      String          // The actual note text
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+// Communication log between doctor and patient
+model Communication {
+  id               String          @id @default(auto()) @map("_id") @db.ObjectId
+  patientId        String          @db.ObjectId
+  patient          PatientProfile  @relation(fields: [patientId], references: [id])
+  
+  doctorId         String?         @db.ObjectId
+  doctor           DoctorProfile?  @relation(fields: [doctorId], references: [id])
+  
+  communicationType String         // e.g., "Reminder", "Message", "Alert"
+  message          String
+  channel          String          // e.g., "SMS", "Email", "In-App"
+  createdAt        DateTime        @default(now())
+}
+
+// Medication Group - Protocol of multiple medications prescribed together
+model MedicationGroup {
+  id                String           @id @default(auto()) @map("_id") @db.ObjectId
+  patientId         String           @db.ObjectId
+  patient           PatientProfile   @relation(fields: [patientId], references: [id])
+  
+  doctorId          String           @db.ObjectId
+  doctor            DoctorProfile    @relation(fields: [doctorId], references: [id])
+  
+  name              String           // e.g., "Acute Treatment Protocol"
+  description       String?          // Optional description
+  groupType         MedicationType   // PREVENTIVE or RESCUE
+  medications       String[]         // Array of medication names
+  color             String?          // For UI display (e.g., "blue", "purple")
+  
+  isActive          Boolean          @default(true)
+  adherenceRate     Float?           // Overall adherence for the group (0-100)
+  
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  
+  // Relations
+  migraineEvents    MigraineEvent[]
+  medicationLogs    MedicationLog[]
+}
+
 
 // ----------------------------------------------
 // ENUMERATIONS
@@ -180,5 +279,17 @@ enum SummaryType {
 enum RiskAlertLevel {
   NONE
   MEDIUM
+  HIGH
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum MedicationEffectiveness {
+  LOW
+  MODERATE
   HIGH
 }

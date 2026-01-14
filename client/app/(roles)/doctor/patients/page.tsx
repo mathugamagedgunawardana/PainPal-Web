@@ -2,14 +2,12 @@
 
 import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Search,
-  Filter,
-  UserPlus,
   Phone,
   Mail,
   Calendar,
@@ -21,12 +19,21 @@ import {
   Clock,
   TrendingUp,
   MapPin,
-  Download,
-  Upload,
   Edit,
   ChevronRight,
-  X
+  Heart,
+  Zap,
+  Shield,
+  CheckCircle,
+  AlertCircle,
+  Download
 } from 'lucide-react'
+import { EpisodeHistoryTab } from '@/components/doctor/EpisodeHistoryTab'
+import { MedicationsTab } from '@/components/doctor/MedicationsTab'
+import { AppointmentsTab } from '@/components/doctor/AppointmentsTab'
+import { NotesTab } from '@/components/doctor/NotesTab'
+import { ReportsTab } from '@/components/doctor/ReportsTab'
+import { CommunicationTab } from '@/components/doctor/CommunicationTab'
 
 // Mock patient data
 const mockPatients = [
@@ -108,17 +115,45 @@ const mockPatients = [
   },
 ]
 
+// Medication Groups
+const medicationGroups = [
+  {
+    id: 1,
+    name: 'Acute Treatment Protocol',
+    type: 'rescue',
+    medications: ['Sumatriptan 50mg', 'Topiramate 25mg'],
+    color: 'blue',
+    adherence: 78
+  },
+  {
+    id: 2,
+    name: 'Preventive Care Regimen',
+    type: 'preventive',
+    medications: ['Topiramate 25mg'],
+    color: 'purple',
+    adherence: 92
+  },
+  {
+    id: 3,
+    name: 'Alternative Relief Protocol',
+    type: 'rescue',
+    medications: ['Ibuprofen 400mg'],
+    color: 'teal',
+    adherence: 85
+  },
+]
+
 const episodeHistory = [
-  { date: '2024-12-15', severity: 'Severe', duration: '6 hours', triggers: ['Stress', 'Sleep'] },
-  { date: '2024-12-10', severity: 'Moderate', duration: '4 hours', triggers: ['Weather'] },
-  { date: '2024-12-05', severity: 'Mild', duration: '2 hours', triggers: ['Caffeine'] },
-  { date: '2024-11-28', severity: 'Severe', duration: '8 hours', triggers: ['Stress', 'Bright Lights'] },
+  { date: '2024-12-15', severity: 'Severe', duration: '6 hours', triggers: ['Stress', 'Sleep'], medicationGroupId: 1, medicationGroupName: 'Acute Treatment Protocol', effectiveness: 'low' },
+  { date: '2024-12-10', severity: 'Moderate', duration: '4 hours', triggers: ['Weather'], medicationGroupId: 1, medicationGroupName: 'Acute Treatment Protocol', effectiveness: 'moderate' },
+  { date: '2024-12-05', severity: 'Mild', duration: '2 hours', triggers: ['Caffeine'], medicationGroupId: 3, medicationGroupName: 'Alternative Relief Protocol', effectiveness: 'high' },
+  { date: '2024-11-28', severity: 'Severe', duration: '8 hours', triggers: ['Stress', 'Bright Lights'], medicationGroupId: 1, medicationGroupName: 'Acute Treatment Protocol', effectiveness: 'low' },
 ]
 
 const medications = [
-  { name: 'Sumatriptan 50mg', frequency: 'As needed', adherence: 78, lastTaken: '2024-12-15' },
-  { name: 'Topiramate 25mg', frequency: 'Daily', adherence: 92, lastTaken: '2024-12-16' },
-  { name: 'Ibuprofen 400mg', frequency: 'As needed', adherence: 85, lastTaken: '2024-12-14' },
+  { name: 'Sumatriptan 50mg', frequency: 'As needed', adherence: 78, lastTaken: '2024-12-15', groupId: 1 },
+  { name: 'Topiramate 25mg', frequency: 'Daily', adherence: 92, lastTaken: '2024-12-16', groupId: 1 },
+  { name: 'Ibuprofen 400mg', frequency: 'As needed', adherence: 85, lastTaken: '2024-12-14', groupId: 3 },
 ]
 
 const appointments = [
@@ -149,23 +184,12 @@ export default function PatientsPage() {
   })
 
   return (
-    <div className="min-h-screen bg-gradient-to-br  via-purple-50 to-teal-50 p-8 space-y-6">
-      {/* Header */}
-      {/* <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Patient Management</h1>
-          <p className="text-gray-600 mt-1">Manage and monitor your migraine patients</p>
-        </div>
-        <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300">
-          <UserPlus className="mr-2 w-5 h-5" />
-          Add New Patient
-        </Button>
-      </div> */}
-
-      {/* Search and Filters */}
-      <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
-        <CardContent className="">
-          <div className="flex flex-col md:flex-row gap-4">
+    <div className="min-h-screen bg-gradient-to-br via-purple-50 to-teal-50 p-3 sm:p-4 md:p-6 lg:p-8">
+      <div className="max-w-[1920px] mx-auto space-y-4 sm:space-y-6">
+        {/* Search and Filters */}
+        <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
@@ -180,29 +204,29 @@ export default function PatientsPage() {
               <Button
                 variant={riskFilter === 'all' ? 'default' : 'outline'}
                 onClick={() => setRiskFilter('all')}
-                className="rounded-xl"
+                className="rounded-xl text-xs sm:text-sm"
               >
                 All Patients
               </Button>
               <Button
                 variant={riskFilter === 'high' ? 'destructive' : 'outline'}
                 onClick={() => setRiskFilter('high')}
-                className="rounded-xl"
+                className="rounded-xl text-xs sm:text-sm"
               >
-                <AlertTriangle className="w-4 h-4 mr-1" />
+                <AlertTriangle className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
                 High Risk
               </Button>
               <Button
                 variant={riskFilter === 'medium' ? 'default' : 'outline'}
                 onClick={() => setRiskFilter('medium')}
-                className="rounded-xl"
+                className="rounded-xl text-xs sm:text-sm"
               >
                 Medium
               </Button>
               <Button
                 variant={riskFilter === 'low' ? 'secondary' : 'outline'}
                 onClick={() => setRiskFilter('low')}
-                className="rounded-xl"
+                className="rounded-xl text-xs sm:text-sm"
               >
                 Low Risk
               </Button>
@@ -211,35 +235,35 @@ export default function PatientsPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] xl:grid-cols-[320px_1fr] gap-4 sm:gap-6">
         {/* Patient List */}
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-800">Patients ({filteredPatients.length})</h2>
-            <Badge variant="secondary" className="text-sm">{filteredPatients.length} Total</Badge>
+            <h2 className="text-base sm:text-xl font-bold text-gray-800">Patients ({filteredPatients.length})</h2>
+            <Badge variant="secondary" className="text-xs sm:text-sm">{filteredPatients.length} Total</Badge>
           </div>
-          <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-y-auto pr-2">
+          <div className="space-y-2 max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-300px)] overflow-y-auto pr-1 sm:pr-2">
             {filteredPatients.map((patient) => (
               <Card
                 key={patient.id}
-                className={`w-full max-w-sm cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] ${
+                className={`w-full cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] ${
                   selectedPatient?.id === patient.id
                     ? 'border-2 border-purple-500 bg-gradient-to-br from-blue-50 to-purple-50 shadow-lg'
                     : 'border border-gray-200 bg-white/80 backdrop-blur-sm'
                 }`}
                 onClick={() => setSelectedPatient(patient)}
               >
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="w-14 h-14 border-3 border-gradient-to-br from-blue-400 to-purple-500 ring-2 ring-white">
+                <CardContent className="p-3 sm:p-4">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <Avatar className="w-12 h-12 sm:w-14 sm:h-14 border-3 border-gradient-to-br from-blue-400 to-purple-500 ring-2 ring-white">
                       <AvatarImage src={patient.photo} alt={patient.name} />
-                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-bold">
+                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-bold text-sm sm:text-base">
                         {patient.name.split(' ').map(n => n[0]).join('')}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-gray-800 truncate">{patient.name}</h3>
-                      <p className="text-sm text-gray-500">{patient.age} years • {patient.gender}</p>
+                      <h3 className="font-bold text-gray-800 truncate text-sm sm:text-base">{patient.name}</h3>
+                      <p className="text-xs sm:text-sm text-gray-500">{patient.age} years • {patient.gender}</p>
                       <div className="flex items-center gap-1 mt-1">
                         <Clock className="w-3 h-3 text-gray-400" />
                         <span className="text-xs text-gray-500">Last: {patient.lastVisit}</span>
@@ -265,56 +289,57 @@ export default function PatientsPage() {
         </div>
 
         {/* Patient Profile Details */}
-        <div className="w-full">
+        <div className="w-full min-w-0">
           {selectedPatient ? (
-            <div className="space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto pr-2">
+            <div className="space-y-4 sm:space-y-6 max-h-[calc(100vh-180px)] sm:max-h-[calc(100vh-200px)] overflow-y-auto pr-1 sm:pr-2">
               {/* Profile Header */}
               <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
-                <CardContent className="p-6">
-                  <div className="flex flex-col md:flex-row items-start gap-6">
-                    <Avatar className="w-28 h-28 border-4 border-gradient-to-br from-blue-500 to-purple-600 ring-4 ring-white shadow-xl">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex flex-col md:flex-row items-start gap-4 sm:gap-6">
+                    <Avatar className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 border-4 border-gradient-to-br from-blue-500 to-purple-600 ring-4 ring-white shadow-xl">
                       <AvatarImage src={selectedPatient.photo} alt={selectedPatient.name} />
                       <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-3xl font-bold">
                         {selectedPatient.name.split(' ').map(n => n[0]).join('')}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="flex-1 space-y-3">
-                      <div className="flex items-start justify-between flex-wrap gap-4">
-                        <div>
-                          <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">{selectedPatient.name}</h2>
-                          <p className="text-gray-600 font-medium mt-1">{selectedPatient.condition}</p>
+                    <div className="flex-1 space-y-2 sm:space-y-3 min-w-0">
+                      <div className="flex items-start justify-between flex-wrap gap-3 sm:gap-4">
+                        <div className="min-w-0">
+                          <h2 className="text-xl sm:text-2xl md:text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent break-words">{selectedPatient.name}</h2>
+                          <p className="text-sm sm:text-base text-gray-600 font-medium mt-1">{selectedPatient.condition}</p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <Button 
                             variant="default" 
                             size="sm" 
-                            className="rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                            className="rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-xs sm:text-sm"
                             onClick={() => window.location.href = '/doctor/patients/analytics'}
                           >
-                            <Activity className="w-4 h-4 mr-2" />
-                            View Analytics
+                            <Activity className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+                            <span className="hidden sm:inline">View Analytics</span>
+                            <span className="sm:hidden">Analytics</span>
                           </Button>
-                          <Button variant="outline" size="sm" className="rounded-xl">
-                            <Edit className="w-4 h-4 mr-2" />
+                          <Button variant="outline" size="sm" className="rounded-xl text-xs sm:text-sm">
+                            <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                             Edit
                           </Button>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                        <div className="flex items-center gap-2 text-gray-600">
-                          <Phone className="w-4 h-4 text-blue-500" />
-                          <span>{selectedPatient.phone}</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm">
+                        <div className="flex items-center gap-2 text-gray-600 min-w-0">
+                          <Phone className="w-3 h-3 sm:w-4 sm:h-4 text-blue-500 flex-shrink-0" />
+                          <span className="truncate">{selectedPatient.phone}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-gray-600">
-                          <Mail className="w-4 h-4 text-purple-500" />
-                          <span>{selectedPatient.email}</span>
+                        <div className="flex items-center gap-2 text-gray-600 min-w-0">
+                          <Mail className="w-3 h-3 sm:w-4 sm:h-4 text-purple-500 flex-shrink-0" />
+                          <span className="truncate">{selectedPatient.email}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-gray-600">
-                          <MapPin className="w-4 h-4 text-teal-500" />
+                        <div className="flex items-center gap-2 text-gray-600 min-w-0">
+                          <MapPin className="w-3 h-3 sm:w-4 sm:h-4 text-teal-500 flex-shrink-0" />
                           <span className="truncate">{selectedPatient.address}</span>
                         </div>
                         <div className="flex items-center gap-2 text-gray-600">
-                          <Calendar className="w-4 h-4 text-indigo-500" />
+                          <Calendar className="w-3 h-3 sm:w-4 sm:h-4 text-indigo-500 flex-shrink-0" />
                           <span>Next: {selectedPatient.nextAppointment}</span>
                         </div>
                       </div>
@@ -324,30 +349,30 @@ export default function PatientsPage() {
               </Card>
 
               {/* Quick Stats */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                 <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-all border-0">
-                  <CardContent className="p-4 text-center">
-                    <Activity className="w-8 h-8 mx-auto mb-2 opacity-90" />
-                    <div className="text-3xl font-bold">{selectedPatient.recentEpisodes}</div>
-                    <div className="text-xs opacity-90 font-medium">Recent Episodes</div>
-                    <div className="text-xs opacity-75 mt-1">(Last 30 days)</div>
+                  <CardContent className="p-3 sm:p-4 text-center">
+                    <Activity className="w-6 h-6 sm:w-8 sm:h-8 mx-auto mb-1 sm:mb-2 opacity-90" />
+                    <div className="text-2xl sm:text-3xl font-bold">{selectedPatient.recentEpisodes}</div>
+                    <div className="text-[10px] sm:text-xs opacity-90 font-medium">Recent Episodes</div>
+                    <div className="text-[9px] sm:text-xs opacity-75 mt-0.5 sm:mt-1">(Last 30 days)</div>
                   </CardContent>
                 </Card>
                 <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg hover:shadow-xl transition-all border-0">
-                  <CardContent className="p-4 text-center">
-                    <Calendar className="w-8 h-8 mx-auto mb-2 opacity-90" />
-                    <div className="text-3xl font-bold">{selectedPatient.migraineDays}</div>
-                    <div className="text-xs opacity-90 font-medium">Migraine Days</div>
-                    <div className="text-xs opacity-75 mt-1">(This month)</div>
+                  <CardContent className="p-3 sm:p-4 text-center">
+                    <Calendar className="w-6 h-6 sm:w-8 sm:h-8 mx-auto mb-1 sm:mb-2 opacity-90" />
+                    <div className="text-2xl sm:text-3xl font-bold">{selectedPatient.migraineDays}</div>
+                    <div className="text-[10px] sm:text-xs opacity-90 font-medium">Migraine Days</div>
+                    <div className="text-[9px] sm:text-xs opacity-75 mt-0.5 sm:mt-1">(This month)</div>
                   </CardContent>
                 </Card>
                 <Card className="bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg hover:shadow-xl transition-all border-0">
-                  <CardContent className="p-4 text-center">
-                    <Pill className="w-8 h-8 mx-auto mb-2 opacity-90" />
-                    <div className="text-3xl font-bold">{selectedPatient.adherence}%</div>
-                    <div className="text-xs opacity-90 font-medium">Medication Adherence</div>
-                    <div className="text-xs opacity-75 mt-1">
-                      <TrendingUp className="w-3 h-3 inline mr-1" />
+                  <CardContent className="p-3 sm:p-4 text-center">
+                    <Pill className="w-6 h-6 sm:w-8 sm:h-8 mx-auto mb-1 sm:mb-2 opacity-90" />
+                    <div className="text-2xl sm:text-3xl font-bold">{selectedPatient.adherence}%</div>
+                    <div className="text-[10px] sm:text-xs opacity-90 font-medium">Medication Adherence</div>
+                    <div className="text-[9px] sm:text-xs opacity-75 mt-0.5 sm:mt-1">
+                      <TrendingUp className="w-2.5 h-2.5 sm:w-3 sm:h-3 inline mr-0.5 sm:mr-1" />
                       {selectedPatient.adherence > 80 ? 'Excellent' : 'Needs Improvement'}
                     </div>
                   </CardContent>
@@ -357,11 +382,11 @@ export default function PatientsPage() {
                   selectedPatient.riskLevel === 'medium' ? 'from-orange-500 to-orange-600' :
                   'from-green-500 to-green-600'
                 } text-white shadow-lg hover:shadow-xl transition-all border-0`}>
-                  <CardContent className="p-4 text-center">
-                    <AlertTriangle className="w-8 h-8 mx-auto mb-2 opacity-90" />
-                    <div className="text-3xl font-bold uppercase">{selectedPatient.riskLevel}</div>
-                    <div className="text-xs opacity-90 font-medium">Risk Level</div>
-                    <div className="text-xs opacity-75 mt-1">
+                  <CardContent className="p-3 sm:p-4 text-center">
+                    <AlertTriangle className="w-6 h-6 sm:w-8 sm:h-8 mx-auto mb-1 sm:mb-2 opacity-90" />
+                    <div className="text-2xl sm:text-3xl font-bold uppercase">{selectedPatient.riskLevel}</div>
+                    <div className="text-[10px] sm:text-xs opacity-90 font-medium">Risk Level</div>
+                    <div className="text-[9px] sm:text-xs opacity-75 mt-0.5 sm:mt-1">
                       {selectedPatient.riskLevel === 'high' ? 'Requires attention' : 
                        selectedPatient.riskLevel === 'medium' ? 'Monitor closely' : 
                        'Under control'}
@@ -370,216 +395,305 @@ export default function PatientsPage() {
                 </Card>
               </div>
 
+              {/* Patient At-A-Glance Summary */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                {/* Clinical Status Overview */}
+                <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
+                  <CardContent className="p-4 sm:p-6">
+                    <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+                      <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500" />
+                      Clinical Status
+                    </h3>
+                    <div className="space-y-2 sm:space-y-3">
+                      <div className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-gradient-to-r from-red-50 to-transparent border-l-4 border-red-500">
+                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                          <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" />
+                          <span className="font-medium text-gray-800 text-xs sm:text-sm truncate">Frequency Status</span>
+                        </div>
+                        <span className={`text-sm font-bold ${selectedPatient.recentEpisodes > 6 ? 'text-red-600' : 'text-orange-600'}`}>
+                          {selectedPatient.recentEpisodes > 6 ? 'High Activity' : 'Moderate'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-gradient-to-r from-blue-50 to-transparent border-l-4 border-blue-500">
+                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                          <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0" />
+                          <span className="font-medium text-gray-800 text-xs sm:text-sm truncate">Medication Compliance</span>
+                        </div>
+                        <span className={`text-xs sm:text-sm font-bold flex-shrink-0 ${selectedPatient.adherence > 85 ? 'text-green-600' : 'text-orange-600'}`}>
+                          {selectedPatient.adherence}%
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-gradient-to-r from-purple-50 to-transparent border-l-4 border-purple-500">
+                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                          <Heart className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600 flex-shrink-0" />
+                          <span className="font-medium text-gray-800 text-xs sm:text-sm truncate">Overall Status</span>
+                        </div>
+                        <Badge className={`${
+                          selectedPatient.riskLevel === 'high' ? 'bg-red-100 text-red-700' :
+                          selectedPatient.riskLevel === 'medium' ? 'bg-orange-100 text-orange-700' :
+                          'bg-green-100 text-green-700'
+                        }`}>
+                          {selectedPatient.riskLevel === 'high' ? '⚠ Monitor' : selectedPatient.riskLevel === 'medium' ? '⚡ Alert' : '✓ Stable'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Key Triggers & Patterns */}
+                <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
+                  <CardContent className="p-4 sm:p-6">
+                    <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+                      <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" />
+                      Key Triggers & Patterns
+                    </h3>
+                    <div className="space-y-2 sm:space-y-3">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Reported Triggers</p>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedPatient.triggers.map((trigger, idx) => (
+                            <Badge key={idx} className="bg-blue-100 text-blue-700 text-xs">
+                              {trigger}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="pt-3 border-t">
+                        <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Severity Trend</p>
+                        <div className="flex gap-1 items-end h-12">
+                          {[2, 3, 5, 6, 4, 7, 5].map((val, idx) => (
+                            <div
+                              key={idx}
+                              className="flex-1 bg-gradient-to-t from-blue-500 to-blue-300 rounded-t"
+                              style={{ height: `${(val / 7) * 100}%` }}
+                              title={`Day ${idx + 1}: Severity ${val}`}
+                            />
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">Trending: {selectedPatient.recentEpisodes > 6 ? '📈 Increasing' : '📉 Stable'}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Active Medications & Next Steps */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+                {/* Current Medications */}
+                <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0 md:col-span-2">
+                  <CardContent className="p-4 sm:p-6">
+                    <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+                      <Pill className="w-4 h-4 sm:w-5 sm:h-5 text-teal-600" />
+                      Medication Groups & Efficacy
+                    </h3>
+                    <div className="space-y-3 sm:space-y-4">
+                      {medicationGroups.map((group, idx) => {
+                        // Calculate efficacy based on episodes using this medication group
+                        const episodesOnGroup = episodeHistory.filter(ep => ep.medicationGroupId === group.id)
+                        const avgEffectiveness = episodesOnGroup.length > 0
+                          ? episodesOnGroup.reduce((acc, ep) => 
+                              acc + (ep.effectiveness === 'high' ? 3 : ep.effectiveness === 'moderate' ? 2 : 1), 0
+                            ) / episodesOnGroup.length
+                          : 0
+                        const efficacyScore = Math.round((avgEffectiveness / 3) * 100)
+                        
+                        return (
+                          <div key={idx} className="p-3 sm:p-5 rounded-xl border-2 border-gray-200 bg-gradient-to-br from-gray-50 to-white hover:shadow-lg transition-all hover:border-teal-300">
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className={`w-3 h-3 rounded-full ${
+                                    group.color === 'blue' ? 'bg-blue-500' :
+                                    group.color === 'purple' ? 'bg-purple-500' :
+                                    'bg-teal-500'
+                                  }`}></div>
+                                  <h4 className="font-bold text-gray-800 text-lg">{group.name}</h4>
+                                </div>
+                                {episodesOnGroup.length > 0 && (
+                                  <Badge className="text-xs bg-blue-100 text-blue-700 mb-2">
+                                    {episodesOnGroup.length} episode{episodesOnGroup.length > 1 ? 's' : ''} recorded
+                                  </Badge>
+                                )}
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                  {group.medications.map((med, i) => (
+                                    <Badge key={i} variant="outline" className="text-xs">
+                                      {med}
+                                    </Badge>
+                                  ))}
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">
+                                  <span className="font-semibold">Type:</span> {group.type === 'rescue' ? '🚨 Rescue' : '🛡️ Preventive'}
+                                </p>
+                              </div>
+                              <Badge className={`text-xs font-bold ${
+                                group.adherence > 85 ? 'bg-green-100 text-green-700' :
+                                group.adherence > 70 ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-red-100 text-red-700'
+                              }`}>
+                                {group.adherence}% adherence
+                              </Badge>
+                            </div>
+                            
+                            {episodesOnGroup.length > 0 && (
+                              <div className="mb-3 p-3 bg-white rounded-lg border border-gray-200">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-xs font-semibold text-gray-600">Group Efficacy Score</span>
+                                  <span className={`text-sm font-bold ${
+                                    efficacyScore >= 70 ? 'text-green-600' :
+                                    efficacyScore >= 50 ? 'text-yellow-600' :
+                                    'text-red-600'
+                                  }`}>
+                                    {efficacyScore}%
+                                  </span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                                  <div
+                                    className={`h-2 rounded-full transition-all duration-500 ${
+                                      efficacyScore >= 70 ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
+                                      efficacyScore >= 50 ? 'bg-gradient-to-r from-yellow-500 to-amber-500' :
+                                      'bg-gradient-to-r from-red-500 to-rose-500'
+                                    }`}
+                                    style={{ width: `${efficacyScore}%` }}
+                                  />
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {efficacyScore >= 70 ? '✓ Highly effective treatment' :
+                                   efficacyScore >= 50 ? '⚡ Moderately effective' :
+                                   '⚠ Consider alternative treatment'}
+                                </p>
+                              </div>
+                            )}
+                            
+                            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                              <div
+                                className={`h-2 rounded-full transition-all duration-500 ${
+                                  group.adherence > 85 ? 'bg-green-500' :
+                                  group.adherence > 70 ? 'bg-yellow-500' :
+                                  'bg-red-500'
+                                }`}
+                                style={{ width: `${group.adherence}%` }}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Quick Actions & Next Appointment */}
+                <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
+                  <CardContent className="p-4 sm:p-6">
+                    <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
+                      <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600" />
+                      Next Steps
+                    </h3>
+                    <div className="space-y-2 sm:space-y-3">
+                      <div className={`p-3 sm:p-4 rounded-lg border-2 ${
+                        new Date(selectedPatient.nextAppointment) < new Date('2024-12-20')
+                          ? 'border-red-200 bg-red-50'
+                          : 'border-green-200 bg-green-50'
+                      }`}>
+                        <p className="text-xs font-semibold text-gray-600 uppercase mb-1">Upcoming</p>
+                        <p className="font-bold text-gray-800 text-sm sm:text-base">{selectedPatient.nextAppointment}</p>
+                        <p className="text-xs text-gray-500 mt-1">📅 Appointment scheduled</p>
+                      </div>
+                      <Button className="w-full rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold text-xs sm:text-sm">
+                        <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+                        Send Message
+                      </Button>
+                      <Button variant="outline" className="w-full rounded-lg text-xs sm:text-sm">
+                        <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+                        Add Note
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
               {/* Detailed Tabs */}
               <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
-                <CardContent className="p-6">
+                <CardContent className="p-4 sm:p-6">
                   <Tabs defaultValue="history" className="w-full">
-                    <TabsList className="mb-6 bg-gray-100 p-1 rounded-xl">
-                      <TabsTrigger value="history" className="rounded-lg">Episode History</TabsTrigger>
-                      <TabsTrigger value="medications" className="rounded-lg">Medications</TabsTrigger>
-                      <TabsTrigger value="reports" className="rounded-lg">Reports & Files</TabsTrigger>
-                      <TabsTrigger value="appointments" className="rounded-lg">Appointments</TabsTrigger>
-                      <TabsTrigger value="notes" className="rounded-lg">Clinical Notes</TabsTrigger>
-                      <TabsTrigger value="communication" className="rounded-lg">Communication</TabsTrigger>
+                    <TabsList className="mb-4 sm:mb-6 bg-gray-100 p-1 rounded-xl flex flex-wrap w-full justify-start">
+                      <TabsTrigger value="history" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
+                        <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span className="hidden xs:inline">Episode History</span>
+                        <span className="xs:hidden">History</span>
+                      </TabsTrigger>
+                      <TabsTrigger value="medications" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
+                        <Pill className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span className="hidden xs:inline">Medications</span>
+                        <span className="xs:hidden">Meds</span>
+                      </TabsTrigger>
+                      <TabsTrigger value="appointments" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
+                        <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span className="hidden xs:inline">Appointments</span>
+                        <span className="xs:hidden">Appts</span>
+                      </TabsTrigger>
+                      <TabsTrigger value="notes" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
+                        <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
+                        Notes
+                      </TabsTrigger>
+                      <TabsTrigger value="reports" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
+                        <Download className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span className="hidden xs:inline">Reports</span>
+                        <span className="xs:hidden">Files</span>
+                      </TabsTrigger>
+                      <TabsTrigger value="communication" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
+                        <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span className="hidden xs:inline">Communication</span>
+                        <span className="xs:hidden">Comm</span>
+                      </TabsTrigger>
                     </TabsList>
 
                     {/* Episode History */}
                     <TabsContent value="history">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-semibold text-gray-800">Migraine Episode Timeline</h3>
-                          <Button variant="default" size="sm" className="rounded-xl">
-                            <TrendingUp className="w-4 h-4 mr-2" />
-                            View Chart
-                          </Button>
-                        </div>
-                        {episodeHistory.map((episode, idx) => (
-                          <div key={idx} className="flex items-start gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-purple-300 hover:bg-purple-50/50 transition-all">
-                            <div className="w-3 h-3 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 mt-2"></div>
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-                                <span className="font-semibold text-gray-800">{episode.date}</span>
-                                <Badge variant={episode.severity === 'Severe' ? 'destructive' : episode.severity === 'Moderate' ? 'default' : 'secondary'}>
-                                  {episode.severity}
-                                </Badge>
-                              </div>
-                              <p className="text-sm text-gray-600 mb-2">
-                                <Clock className="w-4 h-4 inline mr-1" />
-                                Duration: {episode.duration}
-                              </p>
-                              <div className="flex gap-2 mt-2 flex-wrap">
-                                {episode.triggers.map((trigger, i) => (
-                                  <Badge key={i} variant="secondary" className="text-xs bg-blue-100 text-blue-700">{trigger}</Badge>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <EpisodeHistoryTab episodeHistory={episodeHistory} medicationGroups={medicationGroups} />
                     </TabsContent>
 
                     {/* Medications */}
                     <TabsContent value="medications">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-semibold text-gray-800">Current Medications</h3>
-                          <Button variant="default" size="sm" className="rounded-xl bg-purple-600 hover:bg-purple-700">
-                            <Pill className="w-4 h-4 mr-2" />
-                            Add Medication
-                          </Button>
-                        </div>
-                        {medications.map((med, idx) => (
-                          <div key={idx} className="p-5 rounded-xl border-2 border-gray-200 hover:border-teal-300 hover:bg-teal-50/50 transition-all">
-                            <div className="flex items-start justify-between mb-3">
-                              <div>
-                                <h4 className="font-bold text-gray-800 text-lg">{med.name}</h4>
-                                <p className="text-sm text-gray-600 mt-1">{med.frequency}</p>
-                              </div>
-                              <Badge variant="default" className="bg-teal-100 text-teal-700">{med.adherence}% adherence</Badge>
-                            </div>
-                            <p className="text-xs text-gray-500 mb-2">
-                              <Calendar className="w-3 h-3 inline mr-1" />
-                              Last taken: {med.lastTaken}
-                            </p>
-                            <div className="mt-3 bg-gray-200 rounded-full h-3 overflow-hidden">
-                              <div
-                                className="bg-gradient-to-r from-teal-500 to-cyan-500 h-3 rounded-full transition-all duration-500"
-                                style={{ width: `${med.adherence}%` }}
-                              ></div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <MedicationsTab medications={medications} />
                     </TabsContent>
 
                     {/* Reports & Files */}
                     <TabsContent value="reports">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-semibold text-gray-800">Investigations & Reports</h3>
-                          <Button variant="default" size="sm" className="rounded-xl bg-blue-600 hover:bg-blue-700">
-                            <Upload className="w-4 h-4 mr-2" />
-                            Upload File
-                          </Button>
-                        </div>
-                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-blue-400 hover:bg-blue-50/30 transition-all">
-                          <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                          <p className="text-gray-700 font-semibold mb-2">No reports uploaded yet</p>
-                          <p className="text-sm text-gray-500 mb-4">Upload MRI scans, blood tests, and other medical reports</p>
-                          <Button variant="default" size="sm" className="rounded-xl">
-                            <Upload className="w-4 h-4 mr-2" />
-                            Upload First Report
-                          </Button>
-                        </div>
-                      </div>
+                      <ReportsTab />
                     </TabsContent>
 
                     {/* Appointments */}
                     <TabsContent value="appointments">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-semibold text-gray-800">Appointment History</h3>
-                          <Button variant="default" size="sm" className="rounded-xl bg-indigo-600 hover:bg-indigo-700">
-                            <Calendar className="w-4 h-4 mr-2" />
-                            Schedule New
-                          </Button>
-                        </div>
-                        {appointments.map((apt, idx) => (
-                          <div key={idx} className="p-5 rounded-xl border-2 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                                  <Calendar className="w-6 h-6 text-white" />
-                                </div>
-                                <div>
-                                  <h4 className="font-bold text-gray-800">{apt.type}</h4>
-                                  <p className="text-sm text-gray-600">{apt.date} • {apt.doctor}</p>
-                                </div>
-                              </div>
-                              <Badge variant={apt.status === 'Completed' ? 'secondary' : 'default'} className="bg-green-100 text-green-700">
-                                {apt.status}
-                              </Badge>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <AppointmentsTab appointments={appointments} />
                     </TabsContent>
 
                     {/* Clinical Notes */}
                     <TabsContent value="notes">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-semibold text-gray-800">Clinical Notes & Observations</h3>
-                          <Button variant="default" size="sm" className="rounded-xl bg-orange-600 hover:bg-orange-700">
-                            <FileText className="w-4 h-4 mr-2" />
-                            Add Note
-                          </Button>
-                        </div>
-                        {notes.map((note, idx) => (
-                          <div key={idx} className="p-5 rounded-xl border-2 border-gray-200 hover:border-orange-300 hover:bg-orange-50/50 transition-all">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center">
-                                  <FileText className="w-4 h-4 text-white" />
-                                </div>
-                                <span className="text-sm font-bold text-gray-800">{note.author}</span>
-                              </div>
-                              <span className="text-xs text-gray-500">{note.date}</span>
-                            </div>
-                            <p className="text-sm text-gray-700 leading-relaxed">{note.note}</p>
-                          </div>
-                        ))}
-                      </div>
+                      <NotesTab notes={notes} />
                     </TabsContent>
 
                     {/* Communication Log */}
                     <TabsContent value="communication">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-semibold text-gray-800">Communication History</h3>
-                          <Button variant="default" size="sm" className="rounded-xl bg-pink-600 hover:bg-pink-700">
-                            <MessageSquare className="w-4 h-4 mr-2" />
-                            Send Message
-                          </Button>
-                        </div>
-                        {communications.map((comm, idx) => (
-                          <div key={idx} className="p-5 rounded-xl border-2 border-gray-200 hover:border-pink-300 hover:bg-pink-50/50 transition-all">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center">
-                                  <MessageSquare className="w-6 h-6 text-white" />
-                                </div>
-                                <div>
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <h4 className="font-bold text-gray-800">{comm.type}</h4>
-                                    <Badge variant="secondary" className="text-xs bg-pink-100 text-pink-700">{comm.channel}</Badge>
-                                  </div>
-                                  <p className="text-sm text-gray-600">{comm.message}</p>
-                                </div>
-                              </div>
-                              <span className="text-xs text-gray-500">{comm.date}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <CommunicationTab communications={communications} />
                     </TabsContent>
                   </Tabs>
                 </CardContent>
               </Card>
             </div>
           ) : (
-            <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0 h-full flex items-center justify-center min-h-[600px]">
-              <CardContent className="text-center p-12">
-                <div className="w-24 h-24 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Activity className="w-12 h-12 text-purple-600" />
+            <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0 h-full flex items-center justify-center min-h-[400px] sm:min-h-[500px] md:min-h-[600px]">
+              <CardContent className="text-center p-6 sm:p-8 md:p-12">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
+                  <Activity className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 text-purple-600" />
                 </div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-3">Select a Patient</h3>
-                <p className="text-gray-600 max-w-md mx-auto">Choose a patient from the list to view their complete profile, medical history, and analytics dashboard</p>
+                <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2 sm:mb-3">Select a Patient</h3>
+                <p className="text-sm sm:text-base text-gray-600 max-w-md mx-auto px-4">Choose a patient from the list to view their complete profile, medical history, and analytics dashboard</p>
               </CardContent>
             </Card>
           )}
         </div>
       </div>
+    </div>
     </div>
   )
 }
