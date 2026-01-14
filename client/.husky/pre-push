@@ -1,5 +1,13 @@
 #!/bin/sh
-. "$(dirname "$0")/_/husky.sh"
 
-echo "🔨 Running pre-push hook: Building project..."
+echo "🔨 Running pre-push hook: npm run build in /client"
+cd client || exit 1
+
 npm run build
+
+if [ $? -eq 0 ]; then
+  echo "✅ Build successful! Proceeding with push..."
+else
+  echo "❌ Build failed! Push cancelled."
+  exit 1
+fi
