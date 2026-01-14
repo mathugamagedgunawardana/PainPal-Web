@@ -1,0 +1,6 @@
+export { EpisodeHistoryTab } from './EpisodeHistoryTab'
+export { MedicationsTab } from './MedicationsTab'
+export { AppointmentsTab } from './AppointmentsTab'
+export { NotesTab } from './NotesTab'
+export { ReportsTab } from './ReportsTab'
+export { CommunicationTab } from './CommunicationTab'
