@@ -94,18 +94,13 @@ export async function GET(request: NextRequest) {
   let user = await prisma.user.findUnique({
     where: { email: profile.email },
     include: {
-      admin: true,
-      teacher: true,
-      student: true,
+      patientProfile: true,
+      doctorProfile: true,
     },
   });
 
   if (!user) {
     return NextResponse.redirect(`${url.origin}/signin?error=google_no_account`);
-  }
-
-  if (!user.isActive) {
-    return NextResponse.redirect(`${url.origin}/signin?error=google_account_inactive`);
   }
 
   // Store Google identifiers and refresh token for per-user Drive access
@@ -118,9 +113,8 @@ export async function GET(request: NextRequest) {
         ...(refreshToken ? { googleRefreshToken: refreshToken } : {}),
       },
       include: {
-        admin: true,
-        teacher: true,
-        student: true,
+        patientProfile: true,
+        doctorProfile: true,
       },
     });
   } catch (e) {
@@ -129,12 +123,10 @@ export async function GET(request: NextRequest) {
 
   let name = profile.name || '';
   if (!name) {
-    if (user.admin) {
-      name = user.admin.name;
-    } else if (user.teacher) {
-      name = `${user.teacher.firstName} ${user.teacher.lastName}`;
-    } else if (user.student) {
-      name = `${user.student.firstName} ${user.student.lastName}`;
+    if (user.doctorProfile) {
+      name = user.doctorProfile.name;
+    } else if (user.patientProfile) {
+      name = user.patientProfile.name;
     } else {
       name = user.email;
     }
@@ -155,11 +147,11 @@ export async function GET(request: NextRequest) {
     case 'ADMIN':
       redirectPath = '/admin/overview';
       break;
-    case 'TEACHER':
-      redirectPath = '/teacher/overview';
+    case 'DOCTOR':
+      redirectPath = '/doctor/overview';
       break;
-    case 'STUDENT':
-      redirectPath = '/student/overview';
+    case 'PATIENT':
+      redirectPath = '/patient/overview';
       break;
   }
 
