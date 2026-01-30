@@ -26,12 +26,15 @@ export function DropdownMenuTrigger({ children, asChild = false, className }: { 
   const toggle = () => setOpen(!open)
 
   if (asChild) {
-    const child = children as React.ReactElement
+    const child = children as React.ReactElement<any>
+    const handleClick = (e: React.MouseEvent) => {
+      if (child.props && typeof child.props.onClick === "function") {
+        child.props.onClick(e)
+      }
+      toggle()
+    }
     return React.cloneElement(child, {
-      onClick: (e: React.MouseEvent) => {
-        child.props.onClick?.(e)
-        toggle()
-      },
+      onClick: handleClick
     })
   }
 
@@ -50,7 +53,7 @@ export function DropdownMenuContent({ children, align = "start", className }: { 
 }
 
 export function DropdownMenuItem({ children, className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("px-4 py-2 rounded hover:bg-(--color-mint)/10 cursor-pointer", className)} {...props}>{children}</div>
+  return <div className={cn("px-4 py-2 rounded hover:bg-mint/10 cursor-pointer", className)} {...props}>{children}</div>
 }
 
 export function DropdownMenuLabel({ children, className }: { children: React.ReactNode; className?: string }) {
