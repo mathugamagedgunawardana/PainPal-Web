@@ -24,6 +24,9 @@ model User {
   passwordHash    String
   role            Role
   createdAt       DateTime         @default(now())
+  googleId        String?          @unique
+  googleEmail     String?
+  googleRefreshToken String?
   
   // Relations
   patientProfile  PatientProfile?

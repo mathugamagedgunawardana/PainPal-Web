@@ -143,7 +143,7 @@ const medicationGroups = [
   },
 ]
 
-const episodeHistory = [
+const episodeHistory: Array<{ date: string; severity: string; duration: string; triggers: string[]; medicationGroupId: number; medicationGroupName: string; effectiveness: 'high' | 'low' | 'moderate' }> = [
   { date: '2024-12-15', severity: 'Severe', duration: '6 hours', triggers: ['Stress', 'Sleep'], medicationGroupId: 1, medicationGroupName: 'Acute Treatment Protocol', effectiveness: 'low' },
   { date: '2024-12-10', severity: 'Moderate', duration: '4 hours', triggers: ['Weather'], medicationGroupId: 1, medicationGroupName: 'Acute Treatment Protocol', effectiveness: 'moderate' },
   { date: '2024-12-05', severity: 'Mild', duration: '2 hours', triggers: ['Caffeine'], medicationGroupId: 3, medicationGroupName: 'Alternative Relief Protocol', effectiveness: 'high' },
@@ -191,13 +191,13 @@ export default function PatientsPage() {
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
                 type="text"
                 placeholder="Search patients by name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                className="w-full pl-8 pr-1 py-1 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
             </div>
             <div className="flex gap-2 flex-wrap">

@@ -17,9 +17,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate role
-    if (!['ADMIN', 'TEACHER', 'STUDENT'].includes(role)) {
+    if (!['ADMIN', 'DOCTOR', 'PATIENT'].includes(role)) {
       return NextResponse.json(
-        { error: 'Invalid role', message: 'Role must be ADMIN, TEACHER, or STUDENT' },
+        { error: 'Invalid role', message: 'Role must be ADMIN, DOCTOR, or PATIENT' },
         { status: 400 }
       );
     }
@@ -51,67 +51,57 @@ export async function POST(request: NextRequest) {
       user = await prisma.user.create({
         data: {
           email,
-          password: hashedPassword,
+          passwordHash: hashedPassword,
           role: 'ADMIN',
-          admin: {
-            create: {
-              name,
-              phone: phone || null,
-              avatar: avatar || null,
-            },
-          },
-        },
-        include: {
-          admin: true,
         },
       });
-    } else if (role === 'TEACHER') {
+    } else if (role === 'DOCTOR') {
+      // Doctor requires a clinicId - for now create with a placeholder or require it
+      if (!profileData.clinicId) {
+        return NextResponse.json(
+          { error: 'Missing required field', message: 'Doctor registration requires a clinicId' },
+          { status: 400 }
+        );
+      }
+      
       user = await prisma.user.create({
         data: {
           email,
-          password: hashedPassword,
-          role: 'TEACHER',
-          teacher: {
+          passwordHash: hashedPassword,
+          role: 'DOCTOR',
+          doctorProfile: {
             create: {
-              employeeId: profileData.employeeId || `EMP${Date.now()}`,
-              firstName,
-              lastName,
-              phone: phone || '',
-              address: profileData.address || null,
-              department: profileData.department || null,
-              subject: profileData.subject || null,
-              avatar: avatar || null,
+              name,
+              specialization: profileData.specialization || 'General Practice',
+              clinicId: profileData.clinicId,
             },
           },
         },
         include: {
-          teacher: true,
+          doctorProfile: true,
         },
       });
     } else {
+      // PATIENT role
       user = await prisma.user.create({
         data: {
           email,
-          password: hashedPassword,
-          role: 'STUDENT',
-          student: {
+          passwordHash: hashedPassword,
+          role: 'PATIENT',
+          patientProfile: {
             create: {
-              studentId: profileData.studentId || `STU${Date.now()}`,
-              firstName,
-              lastName,
-              dateOfBirth: profileData.dateOfBirth ? new Date(profileData.dateOfBirth) : new Date(),
-              phone: phone || '',
-              address: profileData.address || '',
-              parentName: profileData.parentName || '',
-              parentEmail: profileData.parentEmail || '',
-              parentPhone: profileData.parentPhone || '',
-              enrollmentDate: new Date(),
-              avatar: avatar || null,
+              name,
+              dob: profileData.dob ? new Date(profileData.dob) : new Date(),
+              gender: profileData.gender || null,
+              phone: phone || null,
+              email: email,
+              address: profileData.address || null,
+              condition: profileData.condition || null,
             },
           },
         },
         include: {
-          student: true,
+          patientProfile: true,
         },
       });
     }
