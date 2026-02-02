@@ -1,3 +1,4 @@
+// @ts-expect-error: Missing types for '@vercel/blob'
 import { put, del, type PutBlobResult } from '@vercel/blob';
 
 export type BlobAccess = 'public';
