@@ -1,3 +1,16 @@
+// Google auth callback route – disabled (commented out)
+// To re-enable: uncomment the code below and remove the 501 handler.
+
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(_request: NextRequest) {
+  return NextResponse.json(
+    { error: 'Google OAuth is disabled' },
+    { status: 501 },
+  );
+}
+
+/*
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
@@ -34,7 +47,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${url.origin}/signin?error=google_not_configured`);
   }
 
-  // Exchange authorization code for tokens
   const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: {
@@ -61,7 +73,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${url.origin}/signin?error=google_no_access_token`);
   }
 
-  // Fetch user info from Google
   const userInfoResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -90,7 +101,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${url.origin}/signin?error=google_email_not_verified`);
   }
 
-  // Find existing user by email (no auto-registration to keep roles consistent)
   let user = await prisma.user.findUnique({
     where: { email: profile.email },
     include: {
@@ -103,7 +113,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${url.origin}/signin?error=google_no_account`);
   }
 
-  // Store Google identifiers and refresh token for per-user Drive access
   try {
     user = await prisma.user.update({
       where: { id: user.id },
@@ -141,7 +150,6 @@ export async function GET(request: NextRequest) {
 
   await setAuthCookie(token);
 
-  // Redirect based on role
   let redirectPath = '/';
   switch (user.role) {
     case 'ADMIN':
@@ -157,3 +165,4 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.redirect(new URL(redirectPath, url.origin));
 }
+*/

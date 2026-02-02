@@ -2,9 +2,9 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 // 1. Define the datasource (MongoDB)
-// Connection URL is configured in prisma.config.ts (Prisma 7+)
 datasource db {
   provider = "mongodb"
+  url      = env("DATABASE_URL")
 }
 
 // 2. Define the generator
