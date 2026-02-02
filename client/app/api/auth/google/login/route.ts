@@ -1,3 +1,16 @@
+// Google login route – disabled (commented out)
+// To re-enable: uncomment the code below and remove the 501 handler.
+
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(_request: NextRequest) {
+  return NextResponse.json(
+    { error: 'Google OAuth is disabled' },
+    { status: 501 },
+  );
+}
+
+/*
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import crypto from 'crypto';
@@ -25,7 +38,7 @@ export async function GET(request: NextRequest) {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/api/auth/google/callback',
-    maxAge: 60 * 10, // 10 minutes
+    maxAge: 60 * 10,
   });
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -39,3 +52,4 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.redirect(authUrl.toString());
 }
+*/
