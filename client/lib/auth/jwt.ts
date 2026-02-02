@@ -109,7 +109,7 @@ export async function verifyRequest(request: NextRequest): Promise<JWTPayload | 
 /**
  * Role-based access control middleware
  */
-export function requireRole(...allowedRoles: Array<'ADMIN' | 'TEACHER' | 'STUDENT'>) {
+export function requireRole(...allowedRoles: Array<'ADMIN' | 'DOCTOR' | 'PATIENT'>) {
   return async (request: NextRequest) => {
     const user = await verifyRequest(request);
     
@@ -120,7 +120,7 @@ export function requireRole(...allowedRoles: Array<'ADMIN' | 'TEACHER' | 'STUDEN
       );
     }
     
-    if (!allowedRoles.includes(user.role as any)) {
+    if (!allowedRoles.includes(user.role)) {
       return NextResponse.json(
         { error: 'Forbidden - Insufficient permissions' },
         { status: 403 }
@@ -149,7 +149,7 @@ export function withAuth(
       );
     }
     
-    if (allowedRoles && !allowedRoles.includes(user.role as any)) {
+    if (allowedRoles && !allowedRoles.includes(user.role)) {
       return NextResponse.json(
         { error: 'Forbidden - Insufficient permissions' },
         { status: 403 }
