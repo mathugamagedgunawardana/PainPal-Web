@@ -6,7 +6,7 @@ export { useAuth } from './AuthContext';
 /**
  * Hook to check if user has specific role(s)
  */
-export function useRole(...roles: Array<'ADMIN' | 'TEACHER' | 'STUDENT'>) {
+export function useRole(...roles: Array<'ADMIN' | 'DOCTOR' | 'PATIENT'>) {
   const { user } = useAuth();
   
   if (!user) return false;
