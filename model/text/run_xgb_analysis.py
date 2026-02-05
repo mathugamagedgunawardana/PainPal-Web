@@ -47,7 +47,7 @@ categorical_cols = ['Location', 'Character', 'DPF']
 X = df.drop('Type', axis=1).copy()
 
 for col in categorical_cols:
-    if col in X.columns:
+    if col in X.columns:  
         le = LabelEncoder()
         X[col] = le.fit_transform(X[col].astype(str))
         label_encoders[col] = le

@@ -10,7 +10,7 @@ export function useRole(...roles: Array<'ADMIN' | 'DOCTOR' | 'PATIENT'>) {
   const { user } = useAuth();
   
   if (!user) return false;
-  
+    
   return roles.includes(user.role);
 }
 

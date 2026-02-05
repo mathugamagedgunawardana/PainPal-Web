@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { Search, Bell, LogOut, User } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Bell, LogOut, User, X, Check } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -11,6 +11,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/lib/auth/AuthContext';
+
+interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  time: string;
+  read: boolean;
+  type: 'info' | 'warning' | 'success';
+}
 
 interface HeaderProps {
   userName?: string;
@@ -24,6 +33,60 @@ export default function Header({
   userAvatar = ""
 }: HeaderProps) {
   const { logout } = useAuth();
+
+  const [notifications, setNotifications] = useState<Notification[]>([
+    {
+      id: '1',
+      title: 'New Patient Assigned',
+      message: 'John Smith has been assigned to your care',
+      time: '5 min ago',
+      read: false,
+      type: 'info'
+    },
+    {
+      id: '2',
+      title: 'Appointment Reminder',
+      message: 'Upcoming appointment with Sarah Davis at 2:00 PM',
+      time: '1 hour ago',
+      read: false,
+      type: 'warning'
+    },
+    {
+      id: '3',
+      title: 'Report Completed',
+      message: 'Monthly analytics report is ready for review',
+      time: '3 hours ago',
+      read: false,
+      type: 'success'
+    }
+  ]);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const markAsRead = (id: string) => {
+    setNotifications(notifications.map(n => 
+      n.id === id ? { ...n, read: true } : n
+    ));
+  };
+
+  const markAllAsRead = () => {
+    setNotifications(notifications.map(n => ({ ...n, read: true })));
+  };
+
+  const removeNotification = (id: string) => {
+    setNotifications(notifications.filter(n => n.id !== id));
+  };
+
+  const getNotificationColor = (type: string) => {
+    switch (type) {
+      case 'warning':
+        return 'bg-amber-50 border-l-amber-500';
+      case 'success':
+        return 'bg-green-50 border-l-green-500';
+      default:
+        return 'bg-blue-50 border-l-blue-500';
+    }
+  };
 
   const currentDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -61,14 +124,99 @@ export default function Header({
           </button>
 
           {/* Notifications */}
-          <div className="relative">
-            <button className="p-2 rounded-xl bg-gray-100/80 hover:bg-gray-200/80 transition-colors">
-              <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-            </button>
-            <Badge className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full min-w-[18px] h-[18px] flex items-center justify-center">
-              3
-            </Badge>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <div className="relative">
+                <button className="p-2 rounded-xl bg-gray-100/80 hover:bg-gray-200/80 transition-colors">
+                  <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                </button>
+                {unreadCount > 0 && (
+                  <Badge className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full min-w-[18px] h-[18px] flex items-center justify-center">
+                    {unreadCount}
+                  </Badge>
+                )}
+              </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80 sm:w-96 p-0">
+              <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                <h3 className="font-semibold text-gray-800">Notifications</h3>
+                {unreadCount > 0 && (
+                  <button
+                    onClick={markAllAsRead}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Mark all as read
+                  </button>
+                )}
+              </div>
+              <div className="max-h-96 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-gray-500 text-sm">
+                    No notifications
+                  </div>
+                ) : (
+                  notifications.map((notification) => (
+                    <div
+                      key={notification.id}
+                      className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                        !notification.read ? 'bg-blue-50/50' : ''
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className={`w-1 h-8 rounded-full ${
+                              notification.type === 'warning' ? 'bg-amber-500' :
+                              notification.type === 'success' ? 'bg-green-500' :
+                              'bg-blue-500'
+                            }`} />
+                            <div className="flex-1">
+                              <h4 className={`text-sm font-medium text-gray-800 ${
+                                !notification.read ? 'font-semibold' : ''
+                              }`}>
+                                {notification.title}
+                              </h4>
+                              <p className="text-xs text-gray-600 mt-0.5">
+                                {notification.message}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-1">
+                                {notification.time}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {!notification.read && (
+                            <button
+                              onClick={() => markAsRead(notification.id)}
+                              className="p-1.5 rounded-lg hover:bg-blue-100 text-blue-600 transition-colors"
+                              title="Mark as read"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => removeNotification(notification.id)}
+                            className="p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+                            title="Remove"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              {notifications.length > 0 && (
+                <div className="px-4 py-2 border-t border-gray-200 bg-gray-50">
+                  <button className="text-xs text-blue-600 hover:text-blue-700 font-medium w-full text-center">
+                    View all notifications
+                  </button>
+                </div>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* User Profile */}
           <DropdownMenu>
