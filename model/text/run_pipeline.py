@@ -167,8 +167,6 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
     # Prefer Data folder when no args and Data/ exists (train on each person's attack data)
     if data_dir is None and data_path is None and os.path.isdir(DATA_DIR):
         data_dir = DATA_DIR
-    if data_dir is None:
-        data_dir = None
     df = step1_load_data(path=data_path or DATA_PATH, data_dir=data_dir)
     X, y, y_encoder, feature_encoders = step2_prepare_features_and_target(df)
     X_train, X_test, y_train, y_test = step5_split(
@@ -187,8 +185,14 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
 if __name__ == "__main__":
     import sys
     # Train on Data folder (per-person attack files) if Data/ exists and no arg given
-    if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
-        run_pipeline(data_path=sys.argv[1])
+    if len(sys.argv) > 1:
+        arg = sys.argv[1]
+        if os.path.isdir(arg):
+            run_pipeline(data_dir=arg)
+        elif os.path.isfile(arg):
+            run_pipeline(data_path=arg)
+        else:
+            run_pipeline()
     elif os.path.isdir(DATA_DIR):
         run_pipeline(data_dir=DATA_DIR)
     else:
