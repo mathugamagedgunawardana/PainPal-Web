@@ -32,7 +32,7 @@ const mockData: MigraineTypeTrendPoint[] = [
   { date: "Dec", chronic: 9, typicalAura: 5, vestibular: 4, hemiplegic: 2, probable: 6 },
 ]
 
-const lineKeys: Array<keyof MigraineTypeTrendPoint> = [
+const lineKeys: Array<keyof typeof chartConfig> = [
   "chronic",
   "typicalAura",
   "vestibular",
