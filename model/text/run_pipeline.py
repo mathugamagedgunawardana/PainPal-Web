@@ -8,6 +8,7 @@ Supports:
 """
 
 import os
+import glob
 import pandas as pd
 import numpy as np
 import xgboost as xgb
@@ -16,11 +17,17 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 from save_model import save_artifacts
-from data_loader import load_data_from_data_folder, load_data_single, ID_COLS
+from data_loader import (
+    load_data_from_data_folder,
+    load_data_from_labeled_folder,
+    load_data_single,
+    ID_COLS,
+)
 
 # Config
 DATA_PATH = "migraine_data.csv"
 DATA_DIR = "Data"  # folder with patient_*_migraine_attacks.csv
+LABELED_DIR = os.path.join("Data", "traningData_labeled")
 CATEGORICAL_COLS = ["Location", "Character", "DPF"]
 TARGET = "Type"
 RANDOM_STATE = 42
@@ -35,8 +42,16 @@ def step1_load_data(path=None, data_dir=None):
     print("Step 1: Load data")
     print("=" * 60)
     if data_dir and os.path.isdir(data_dir):
-        df = load_data_from_data_folder(data_dir)
-        print(f"  Loaded {len(df)} rows from {data_dir} (all patient attack CSVs combined)")
+        patient_paths = glob.glob(os.path.join(data_dir, "patient*migraine*.csv"))
+        if not patient_paths:
+            patient_paths = glob.glob(os.path.join(data_dir, "patient_*.csv"))
+
+        if patient_paths:
+            df = load_data_from_data_folder(data_dir)
+            print(f"  Loaded {len(df)} rows from {data_dir} (all patient attack CSVs combined)")
+        else:
+            df = load_data_from_labeled_folder(data_dir)
+            print(f"  Loaded {len(df)} rows from {data_dir} (labeled migraine folders)")
     else:
         path = path or DATA_PATH
         df = load_data_single(path) if path and os.path.isfile(path) else pd.read_csv(path)
@@ -45,18 +60,18 @@ def step1_load_data(path=None, data_dir=None):
     return df
 
 
-def step2_prepare_features_and_target(df):
+def step2_prepare_features_and_target(df, target_col):
     """Steps 2–4: Define target, encode categoricals, encode target. Drops ID columns from features."""
     print("\n" + "=" * 60)
     print("Steps 2–4: Prepare features and target")
     print("=" * 60)
     # Drop target and any ID columns (patient_id, attack_id) so they are not used as features
-    drop_cols = [TARGET]
+    drop_cols = [target_col]
     for c in ID_COLS:
         if c in df.columns:
             drop_cols.append(c)
     X = df.drop(columns=[c for c in drop_cols if c in df.columns]).copy()
-    y_series = df[TARGET].astype(str)
+    y_series = df[target_col].astype(str)
 
     label_encoders = {}
     for col in CATEGORICAL_COLS:
@@ -135,8 +150,20 @@ def step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder):
     y_pred_test = model.predict(X_test)
     test_acc = accuracy_score(y_test, y_pred_test)
     print(f"  Test accuracy: {test_acc:.4f}")
-    print("\n  Classification report:\n", classification_report(y_test, y_pred_test, target_names=y_encoder.classes_))
-    print("  Confusion matrix:\n", confusion_matrix(y_test, y_pred_test))
+
+    # Ensure report includes all classes even if some are missing in y_test
+    all_labels = list(range(len(y_encoder.classes_)))
+    print(
+        "\n  Classification report:\n",
+        classification_report(
+            y_test,
+            y_pred_test,
+            labels=all_labels,
+            target_names=y_encoder.classes_,
+            zero_division=0,
+        ),
+    )
+    print("  Confusion matrix:\n", confusion_matrix(y_test, y_pred_test, labels=all_labels))
     return test_acc
 
 
@@ -164,11 +191,22 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
     """
     os.makedirs("artifacts", exist_ok=True)
 
-    # Prefer Data folder when no args and Data/ exists (train on each person's attack data)
-    if data_dir is None and data_path is None and os.path.isdir(DATA_DIR):
+    # Prefer labeled data if present and no args given
+    if data_dir is None and data_path is None and os.path.isdir(LABELED_DIR):
+        data_dir = LABELED_DIR
+    elif data_dir is None and data_path is None and os.path.isdir(DATA_DIR):
         data_dir = DATA_DIR
+
     df = step1_load_data(path=data_path or DATA_PATH, data_dir=data_dir)
-    X, y, y_encoder, feature_encoders = step2_prepare_features_and_target(df)
+
+    if "MigraineType" in df.columns:
+        target_col = "MigraineType"
+    elif TARGET in df.columns:
+        target_col = TARGET
+    else:
+        raise ValueError("No target column found. Expected 'MigraineType' or 'Type'.")
+
+    X, y, y_encoder, feature_encoders = step2_prepare_features_and_target(df, target_col)
     X_train, X_test, y_train, y_test = step5_split(
         X, y, df=df, stratify_by_patient=stratify_by_patient and "patient_id" in df.columns
     )
@@ -184,7 +222,7 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
 
 if __name__ == "__main__":
     import sys
-    # Train on Data folder (per-person attack files) if Data/ exists and no arg given
+    # Train on labeled folder if present, else Data folder (per-person attack files)
     if len(sys.argv) > 1:
         arg = sys.argv[1]
         if os.path.isdir(arg):
@@ -193,6 +231,8 @@ if __name__ == "__main__":
             run_pipeline(data_path=arg)
         else:
             run_pipeline()
+    elif os.path.isdir(LABELED_DIR):
+        run_pipeline(data_dir=LABELED_DIR)
     elif os.path.isdir(DATA_DIR):
         run_pipeline(data_dir=DATA_DIR)
     else:

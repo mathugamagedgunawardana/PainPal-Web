@@ -15,8 +15,20 @@ def _patient_sort_key(path: str) -> tuple:
 
 # ID columns to drop when building feature matrix X (not features)
 ID_COLS = ["patient_id", "attack_id"]
-# Target column
+# Target columns
 TARGET = "Type"
+MIGRAINE_TYPE_COL = "MigraineType"
+
+
+def _find_patient_csvs(data_dir: str, pattern: str) -> list[str]:
+    paths = glob.glob(os.path.join(data_dir, pattern))
+    if not paths:
+        paths = glob.glob(os.path.join(data_dir, "patient_*.csv"))
+    return sorted(paths, key=_patient_sort_key)
+
+
+def _find_any_csvs(data_dir: str) -> list[str]:
+    return sorted(glob.glob(os.path.join(data_dir, "**", "*.csv"), recursive=True))
 
 
 def load_data_from_data_folder(data_dir: str, pattern: str = "patient*migraine*.csv"):
@@ -40,12 +52,9 @@ def load_data_from_data_folder(data_dir: str, pattern: str = "patient*migraine*.
         raise FileNotFoundError(f"Data directory not found: {data_dir}")
 
     # Support both patient_1_migraine_attacks.csv and patient_01.csv style
-    paths = glob.glob(os.path.join(data_dir, pattern))
-    if not paths:
-        paths = glob.glob(os.path.join(data_dir, "patient_*.csv"))
+    paths = _find_patient_csvs(data_dir, pattern)
     if not paths:
         raise FileNotFoundError(f"No files matching '{pattern}' in {data_dir}")
-    paths = sorted(paths, key=_patient_sort_key)
 
     frames = []
     for path in paths:
@@ -67,6 +76,52 @@ def load_data_from_data_folder(data_dir: str, pattern: str = "patient*migraine*.
     # Coerce target to string for consistent encoding (handles 0/1 or class names)
     combined[TARGET] = combined[TARGET].astype(str)
 
+    return combined
+
+
+def load_data_from_labeled_folder(data_dir: str) -> pd.DataFrame:
+    """
+    Load and combine labeled migraine CSVs from a folder with subfolders per class.
+
+    Expected layout:
+      Data/traningData_labeled/<migraine_type>/*.csv
+
+    Each CSV can include MigraineType. If missing, the folder name is used.
+    """
+    data_dir = os.path.abspath(data_dir)
+    if not os.path.isdir(data_dir):
+        raise FileNotFoundError(f"Labeled data directory not found: {data_dir}")
+
+    paths = _find_any_csvs(data_dir)
+    if not paths:
+        raise FileNotFoundError(f"No CSVs found under {data_dir}")
+
+    frames = []
+    for path in paths:
+        try:
+            df = pd.read_csv(path)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read {path}: {e}") from e
+
+        # Drop attack_id to avoid leakage; keep patient_id for optional stratification
+        if "attack_id" in df.columns:
+            df = df.drop(columns=["attack_id"])
+
+        if MIGRAINE_TYPE_COL not in df.columns:
+            folder = os.path.basename(os.path.dirname(path))
+            label = folder.replace("_", " ").strip()
+            df[MIGRAINE_TYPE_COL] = label
+
+        frames.append(df)
+
+    combined = pd.concat(frames, axis=0, ignore_index=True)
+
+    if MIGRAINE_TYPE_COL not in combined.columns:
+        raise ValueError(
+            f"Target column '{MIGRAINE_TYPE_COL}' not found. Columns: {combined.columns.tolist()}"
+        )
+
+    combined[MIGRAINE_TYPE_COL] = combined[MIGRAINE_TYPE_COL].astype(str)
     return combined
 
 

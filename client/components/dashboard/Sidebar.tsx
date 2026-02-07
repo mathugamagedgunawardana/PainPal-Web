@@ -18,7 +18,8 @@ import {
   Stethoscope,
   HeartPulse,
   ClipboardList,
-  MessageSquare
+  MessageSquare,
+  CheckCircle2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -34,6 +35,7 @@ const navigationByRole = {
   doctor: [
     { icon: Home, label: 'Overview', id: 'overview', href: '/doctor/overview' },
     { icon: Users, label: 'Patients', id: 'patients', href: '/doctor/patients' },
+    { icon: CheckCircle2, label: 'Approvals', id: 'approvals', href: '/doctor/patients/approve' },
     { icon: Activity, label: 'Analytics', id: 'analytics', href: '/doctor/analytics' },
     // { icon: BarChart3, label: 'Risk Assessment', id: 'risk', href: '/doctor/risk' },
     // { icon: FileText, label: 'Treatments', id: 'treatments', href: '/doctor/treatments' },

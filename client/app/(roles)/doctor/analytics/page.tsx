@@ -42,6 +42,7 @@ import {
   Legend
 } from "recharts"
 import StatsCard from "@/components/dashboard/StatsCard"
+import { MigraineTypeTrendChart } from "@/components/doctor"
 
 // Mock data - replace with actual API calls
 const patientOverviewStats = {
@@ -227,6 +228,11 @@ export default function DoctorAnalyticsPage() {
           change="-0.5 from last month"
           changeType="positive"
         />
+      </div>
+
+      {/* Migraine Type Trend */}
+      <div className="mb-6">
+        <MigraineTypeTrendChart />
       </div>
 
       {/* Main Analytics Grid */}
