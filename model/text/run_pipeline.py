@@ -84,7 +84,10 @@ def step2_prepare_features_and_target(df, target_col):
 
     # Impute missing values before encoding
     numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
-    categorical_cols = list({*CATEGORICAL_COLS, *X.select_dtypes(include=["object", "category"]).columns})
+    # Only treat columns as categorical if they are non-numeric or explicitly non-numeric in the data
+    detected_cat_cols = X.select_dtypes(include=["object", "category"]).columns.tolist()
+    explicit_cat_cols = [c for c in CATEGORICAL_COLS if c in X.columns and c not in numeric_cols]
+    categorical_cols = list({*detected_cat_cols, *explicit_cat_cols})
 
     num_imputer = None
     if numeric_cols:
@@ -168,7 +171,6 @@ def step6_train(X_train, y_train, X_test, y_test, n_classes):
         y_train,
         sample_weight=sample_weight,
         eval_set=[(X_test, y_test)],
-        early_stopping_rounds=50,
         verbose=False,
     )
     print("  Model training completed.")
