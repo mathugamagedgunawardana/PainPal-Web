@@ -11,7 +11,7 @@ app = Flask(__name__)
 SYMPTOM_LABELS = {
     "Age": "age",
     "Duration": "attack duration (hours)",
-    "Frequency": "attack frequency per month",
+    "Frequency": "attack frequency per month", 
     "Location": "pain location",
     "Character": "pain character",
     "Intensity": "pain intensity (1-10)",

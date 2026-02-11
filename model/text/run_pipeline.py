@@ -15,6 +15,8 @@ import xgboost as xgb
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.impute import SimpleImputer
+from sklearn.utils.class_weight import compute_class_weight
 
 from save_model import save_artifacts
 from data_loader import (
@@ -61,7 +63,7 @@ def step1_load_data(path=None, data_dir=None):
 
 
 def step2_prepare_features_and_target(df, target_col):
-    """Steps 2–4: Define target, encode categoricals, encode target. Drops ID columns from features."""
+    """Steps 2–4: Define target, engineer features, impute, one-hot encode, encode target."""
     print("\n" + "=" * 60)
     print("Steps 2–4: Prepare features and target")
     print("=" * 60)
@@ -73,17 +75,36 @@ def step2_prepare_features_and_target(df, target_col):
     X = df.drop(columns=[c for c in drop_cols if c in df.columns]).copy()
     y_series = df[target_col].astype(str)
 
-    label_encoders = {}
-    for col in CATEGORICAL_COLS:
-        if col in X.columns:
-            le = LabelEncoder()
-            X[col] = le.fit_transform(X[col].astype(str))
-            label_encoders[col] = le
+    # Feature engineering
+    if "Intensity" in X.columns and "Frequency" in X.columns:
+        X["Intensity_x_Freq"] = X["Intensity"] * X["Frequency"]
+    aura_cols = [c for c in ["Visual", "Sensory", "Dysphasia"] if c in X.columns]
+    if aura_cols:
+        X["has_aura"] = (X[aura_cols].sum(axis=1) > 0).astype(int)
+
+    # Impute missing values before encoding
+    numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+    categorical_cols = list({*CATEGORICAL_COLS, *X.select_dtypes(include=["object", "category"]).columns})
+
+    num_imputer = None
+    if numeric_cols:
+        num_imputer = SimpleImputer(strategy="median")
+        X[numeric_cols] = num_imputer.fit_transform(X[numeric_cols])
+
+    cat_imputer = None
+    if categorical_cols:
+        cat_imputer = SimpleImputer(strategy="constant", fill_value="missing")
+        X[categorical_cols] = cat_imputer.fit_transform(X[categorical_cols])
+        X[categorical_cols] = X[categorical_cols].astype(str)
+
+    # One-hot encoding for categoricals
+    if categorical_cols:
+        X = pd.get_dummies(X, columns=categorical_cols, dummy_na=True)
 
     y_encoder = LabelEncoder()
     y = y_encoder.fit_transform(y_series)
     print(f"  Features shape: {X.shape}, target shape: {y.shape}")
-    return X, y, y_encoder, label_encoders
+    return X, y, y_encoder, num_imputer, cat_imputer
 
 
 def step5_split(X, y, df=None, stratify_by_patient=False):
@@ -119,23 +140,35 @@ def step6_train(X_train, y_train, X_test, y_test, n_classes):
     print("\n" + "=" * 60)
     print("Step 6: Train XGBoost")
     print("=" * 60)
+    class_weights = compute_class_weight(
+        class_weight="balanced",
+        classes=np.unique(y_train),
+        y=y_train,
+    )
+    weight_map = dict(zip(np.unique(y_train), class_weights))
+    sample_weight = np.array([weight_map[c] for c in y_train])
+
     model = xgb.XGBClassifier(
-        objective="multi:softmax",
+        objective="multi:softprob",
         num_class=n_classes,
         eval_metric="mlogloss",
         use_label_encoder=False,
         random_state=RANDOM_STATE,
-        n_estimators=100,
+        n_estimators=600,
         max_depth=6,
-        learning_rate=0.1,
-        subsample=0.8,
-        colsample_bytree=0.8,
+        learning_rate=0.05,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        min_child_weight=1,
+        reg_lambda=1.0,
         verbosity=0,
     )
     model.fit(
         X_train,
         y_train,
+        sample_weight=sample_weight,
         eval_set=[(X_test, y_test)],
+        early_stopping_rounds=50,
         verbose=False,
     )
     print("  Model training completed.")
@@ -167,7 +200,7 @@ def step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder):
     return test_acc
 
 
-def step9_save(model, target_encoder, feature_encoders, feature_names):
+def step9_save(model, target_encoder, feature_names, num_imputer=None, cat_imputer=None):
     """Step 9: Save model and encoders."""
     print("\n" + "=" * 60)
     print("Step 9: Save model and encoders")
@@ -175,8 +208,10 @@ def step9_save(model, target_encoder, feature_encoders, feature_names):
     save_artifacts(
         model=model,
         target_encoder=target_encoder,
-        feature_encoders=feature_encoders,
+        feature_encoders=None,
         feature_names=feature_names,
+        num_imputer=num_imputer,
+        cat_imputer=cat_imputer,
     )
 
 
@@ -206,14 +241,14 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
     else:
         raise ValueError("No target column found. Expected 'MigraineType' or 'Type'.")
 
-    X, y, y_encoder, feature_encoders = step2_prepare_features_and_target(df, target_col)
+    X, y, y_encoder, num_imputer, cat_imputer = step2_prepare_features_and_target(df, target_col)
     X_train, X_test, y_train, y_test = step5_split(
         X, y, df=df, stratify_by_patient=stratify_by_patient and "patient_id" in df.columns
     )
     n_classes = len(np.unique(y))
     model = step6_train(X_train, y_train, X_test, y_test, n_classes)
     step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder)
-    step9_save(model, y_encoder, feature_encoders, X.columns.tolist())
+    step9_save(model, y_encoder, X.columns.tolist(), num_imputer=num_imputer, cat_imputer=cat_imputer)
 
     print("\n" + "=" * 60)
     print("Pipeline finished. Use predictModel.py for inference.")
