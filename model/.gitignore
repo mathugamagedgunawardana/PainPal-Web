@@ -7,3 +7,11 @@
 **/Data/
 image/Data/
 text/Data/
+
+# Large archives and model artifacts (slow to push)
+*.zip
+*.pkl
+*.pt
+*.pth
+*.joblib
+artifacts/
