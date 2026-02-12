@@ -8,10 +8,27 @@
 image/Data/
 text/Data/
 
+# Common dataset file types inside model/
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.npy
+*.npz
+*.h5
+*.hdf5
+
 # Large archives and model artifacts (slow to push)
 *.zip
 *.pkl
 *.pt
 *.pth
 *.joblib
+*.onnx
+*.ckpt
+*.bin
+*.tar
+*.tar.gz
+*.tgz
+*.gz
 artifacts/
