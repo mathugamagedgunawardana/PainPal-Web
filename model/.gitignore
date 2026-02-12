@@ -1,4 +1,9 @@
 /venv
 /node_modules
 /liveAgent/node_modules
+
+# Data folders (datasets, train outputs, etc.)
 /Data
+**/Data/
+image/Data/
+text/Data/
