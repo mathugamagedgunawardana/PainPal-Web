@@ -26,13 +26,15 @@ X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
 
-# Step 6: Initialize and train XGBoost
+# Step 6: Initialize and train XGBoost (use device="cuda" for GPU, "cpu" for CPU)
 model = xgb.XGBClassifier(
     objective='multi:softmax',  # Multi-class classification
     num_class=len(df['Type'].unique()),
     eval_metric='mlogloss',
     use_label_encoder=False,
-    random_state=42
+    random_state=42,
+    tree_method="hist",
+    device="cuda",
 )
 
 model.fit(X_train, y_train)

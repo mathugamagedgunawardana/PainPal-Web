@@ -1,0 +1,18 @@
+patient_id,attack_id,Age,Duration,Frequency,Location,Character,Intensity,Nausea,Vomit,Phonophobia,Photophobia,Visual,Sensory,Dysphasia,Dysarthria,Vertigo,Tinnitus,Hypoacusis,Diplopia,Defect,Ataxia,Conscience,Paresthesia,DPF,Type,MigraineType
+P010,19,1,0,0,1,0,0,1,1,0,0,0,0,0,1,1,0,1,0,0,0,0,0,1,0,Vestibular migraine
+P011,17,1,0,0,1,0,1,0,1,0,1,1,0,0,0,1,0,0,1,0,0,0,0,0,0,Vestibular migraine
+P012,27,1,0,1,1,0,0,0,1,0,0,0,0,0,0,1,1,1,0,1,1,1,0,0,1,Vestibular migraine
+P013,11,1,1,1,0,0,0,0,1,0,1,0,0,0,0,1,0,1,1,0,1,1,1,0,1,Vestibular migraine
+P016,43,1,0,0,0,0,1,1,0,0,1,0,0,0,0,1,1,1,0,0,1,0,1,0,1,Vestibular migraine
+P020,14,0,1,0,0,0,1,0,0,0,1,0,1,0,0,1,0,1,0,0,0,1,0,0,1,Vestibular migraine
+P023,14,1,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,1,0,1,0,1,1,Vestibular migraine
+P026,22,0,0,0,1,0,0,1,0,1,0,0,1,0,0,1,1,0,1,0,0,0,0,1,0,Vestibular migraine
+P027,20,1,0,0,0,0,1,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,1,1,0,Vestibular migraine
+P028,9,1,1,1,1,0,1,0,0,0,1,0,0,0,0,1,1,1,0,0,1,1,1,0,1,Vestibular migraine
+P030,30,0,1,1,1,1,1,0,0,0,0,1,0,0,0,1,0,1,1,0,0,0,0,0,1,Vestibular migraine
+P033,1,1,0,1,1,0,1,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,1,Vestibular migraine
+P003,1,1,1,0,1,0,1,0,1,0,0,0,1,0,0,1,1,0,0,1,0,1,0,0,0,Vestibular migraine
+P004,31,1,1,0,0,0,0,1,1,0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,Vestibular migraine
+P005,39,0,1,1,1,0,0,0,0,0,1,0,1,0,0,1,0,0,0,0,0,0,0,0,0,Vestibular migraine
+P007,10,0,0,1,0,0,0,1,0,0,1,0,0,0,0,1,1,0,0,0,1,0,1,0,1,Vestibular migraine
+P009,40,1,0,1,0,0,0,0,0,0,0,0,1,0,1,1,0,1,0,0,0,1,0,1,0,Vestibular migraine

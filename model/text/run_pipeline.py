@@ -8,25 +8,41 @@ Supports:
 """
 
 import os
+import glob
 import pandas as pd
 import numpy as np
 import xgboost as xgb
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.impute import SimpleImputer
+from sklearn.utils.class_weight import compute_class_weight
 
 from save_model import save_artifacts
-from data_loader import load_data_from_data_folder, load_data_single, ID_COLS
+from data_loader import (
+    load_data_from_data_folder,
+    load_data_from_labeled_folder,
+    load_data_single,
+    ID_COLS,
+)
 
 # Config
 DATA_PATH = "migraine_data.csv"
 DATA_DIR = "Data"  # folder with patient_*_migraine_attacks.csv
+LABELED_DIR = os.path.join("Data", "traningData_labeled")
 CATEGORICAL_COLS = ["Location", "Character", "DPF"]
 TARGET = "Type"
 RANDOM_STATE = 42
 TEST_SIZE = 0.2
 # When using Data folder: split by patient so test set = unseen patients
 STRATIFY_BY_PATIENT = True
+# Use GPU for XGBoost if available (set to "cpu" to force CPU)
+USE_GPU = True
+
+
+def _xgb_device():
+    """Return 'cuda' for GPU, else 'cpu'. Set USE_GPU=False to force CPU."""
+    return "cuda" if USE_GPU else "cpu"
 
 
 def step1_load_data(path=None, data_dir=None):
@@ -35,8 +51,16 @@ def step1_load_data(path=None, data_dir=None):
     print("Step 1: Load data")
     print("=" * 60)
     if data_dir and os.path.isdir(data_dir):
-        df = load_data_from_data_folder(data_dir)
-        print(f"  Loaded {len(df)} rows from {data_dir} (all patient attack CSVs combined)")
+        patient_paths = glob.glob(os.path.join(data_dir, "patient*migraine*.csv"))
+        if not patient_paths:
+            patient_paths = glob.glob(os.path.join(data_dir, "patient_*.csv"))
+
+        if patient_paths:
+            df = load_data_from_data_folder(data_dir)
+            print(f"  Loaded {len(df)} rows from {data_dir} (all patient attack CSVs combined)")
+        else:
+            df = load_data_from_labeled_folder(data_dir)
+            print(f"  Loaded {len(df)} rows from {data_dir} (labeled migraine folders)")
     else:
         path = path or DATA_PATH
         df = load_data_single(path) if path and os.path.isfile(path) else pd.read_csv(path)
@@ -45,30 +69,52 @@ def step1_load_data(path=None, data_dir=None):
     return df
 
 
-def step2_prepare_features_and_target(df):
-    """Steps 2–4: Define target, encode categoricals, encode target. Drops ID columns from features."""
+def step2_prepare_features_and_target(df, target_col):
+    """Steps 2–4: Define target, engineer features, impute, one-hot encode, encode target."""
     print("\n" + "=" * 60)
     print("Steps 2–4: Prepare features and target")
     print("=" * 60)
     # Drop target and any ID columns (patient_id, attack_id) so they are not used as features
-    drop_cols = [TARGET]
+    drop_cols = [target_col]
     for c in ID_COLS:
         if c in df.columns:
             drop_cols.append(c)
     X = df.drop(columns=[c for c in drop_cols if c in df.columns]).copy()
-    y_series = df[TARGET].astype(str)
+    y_series = df[target_col].astype(str)
 
-    label_encoders = {}
-    for col in CATEGORICAL_COLS:
-        if col in X.columns:
-            le = LabelEncoder()
-            X[col] = le.fit_transform(X[col].astype(str))
-            label_encoders[col] = le
+    # Feature engineering
+    if "Intensity" in X.columns and "Frequency" in X.columns:
+        X["Intensity_x_Freq"] = X["Intensity"] * X["Frequency"]
+    aura_cols = [c for c in ["Visual", "Sensory", "Dysphasia"] if c in X.columns]
+    if aura_cols:
+        X["has_aura"] = (X[aura_cols].sum(axis=1) > 0).astype(int)
+
+    # Impute missing values before encoding
+    numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+    # Only treat columns as categorical if they are non-numeric or explicitly non-numeric in the data
+    detected_cat_cols = X.select_dtypes(include=["object", "category"]).columns.tolist()
+    explicit_cat_cols = [c for c in CATEGORICAL_COLS if c in X.columns and c not in numeric_cols]
+    categorical_cols = list({*detected_cat_cols, *explicit_cat_cols})
+
+    num_imputer = None
+    if numeric_cols:
+        num_imputer = SimpleImputer(strategy="median")
+        X[numeric_cols] = num_imputer.fit_transform(X[numeric_cols])
+
+    cat_imputer = None
+    if categorical_cols:
+        cat_imputer = SimpleImputer(strategy="constant", fill_value="missing")
+        X[categorical_cols] = cat_imputer.fit_transform(X[categorical_cols])
+        X[categorical_cols] = X[categorical_cols].astype(str)
+
+    # One-hot encoding for categoricals
+    if categorical_cols:
+        X = pd.get_dummies(X, columns=categorical_cols, dummy_na=True)
 
     y_encoder = LabelEncoder()
     y = y_encoder.fit_transform(y_series)
     print(f"  Features shape: {X.shape}, target shape: {y.shape}")
-    return X, y, y_encoder, label_encoders
+    return X, y, y_encoder, num_imputer, cat_imputer
 
 
 def step5_split(X, y, df=None, stratify_by_patient=False):
@@ -104,22 +150,37 @@ def step6_train(X_train, y_train, X_test, y_test, n_classes):
     print("\n" + "=" * 60)
     print("Step 6: Train XGBoost")
     print("=" * 60)
+    class_weights = compute_class_weight(
+        class_weight="balanced",
+        classes=np.unique(y_train),
+        y=y_train,
+    )
+    weight_map = dict(zip(np.unique(y_train), class_weights))
+    sample_weight = np.array([weight_map[c] for c in y_train])
+
+    device = _xgb_device()
+    print(f"  GPU: {'Yes' if device == 'cuda' else 'No'}  (XGBoost device={device})")
     model = xgb.XGBClassifier(
-        objective="multi:softmax",
+        objective="multi:softprob",
         num_class=n_classes,
         eval_metric="mlogloss",
         use_label_encoder=False,
         random_state=RANDOM_STATE,
-        n_estimators=100,
+        n_estimators=600,
         max_depth=6,
-        learning_rate=0.1,
-        subsample=0.8,
-        colsample_bytree=0.8,
+        learning_rate=0.05,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        min_child_weight=1,
+        reg_lambda=1.0,
         verbosity=0,
+        tree_method="hist",
+        device=device,
     )
     model.fit(
         X_train,
         y_train,
+        sample_weight=sample_weight,
         eval_set=[(X_test, y_test)],
         verbose=False,
     )
@@ -135,12 +196,24 @@ def step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder):
     y_pred_test = model.predict(X_test)
     test_acc = accuracy_score(y_test, y_pred_test)
     print(f"  Test accuracy: {test_acc:.4f}")
-    print("\n  Classification report:\n", classification_report(y_test, y_pred_test, target_names=y_encoder.classes_))
-    print("  Confusion matrix:\n", confusion_matrix(y_test, y_pred_test))
+
+    # Ensure report includes all classes even if some are missing in y_test
+    all_labels = list(range(len(y_encoder.classes_)))
+    print(
+        "\n  Classification report:\n",
+        classification_report(
+            y_test,
+            y_pred_test,
+            labels=all_labels,
+            target_names=y_encoder.classes_,
+            zero_division=0,
+        ),
+    )
+    print("  Confusion matrix:\n", confusion_matrix(y_test, y_pred_test, labels=all_labels))
     return test_acc
 
 
-def step9_save(model, target_encoder, feature_encoders, feature_names):
+def step9_save(model, target_encoder, feature_names, num_imputer=None, cat_imputer=None):
     """Step 9: Save model and encoders."""
     print("\n" + "=" * 60)
     print("Step 9: Save model and encoders")
@@ -148,8 +221,10 @@ def step9_save(model, target_encoder, feature_encoders, feature_names):
     save_artifacts(
         model=model,
         target_encoder=target_encoder,
-        feature_encoders=feature_encoders,
+        feature_encoders=None,
         feature_names=feature_names,
+        num_imputer=num_imputer,
+        cat_imputer=cat_imputer,
     )
 
 
@@ -164,20 +239,29 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
     """
     os.makedirs("artifacts", exist_ok=True)
 
-    # Prefer Data folder when no args and Data/ exists (train on each person's attack data)
-    if data_dir is None and data_path is None and os.path.isdir(DATA_DIR):
+    # Prefer labeled data if present and no args given
+    if data_dir is None and data_path is None and os.path.isdir(LABELED_DIR):
+        data_dir = LABELED_DIR
+    elif data_dir is None and data_path is None and os.path.isdir(DATA_DIR):
         data_dir = DATA_DIR
-    if data_dir is None:
-        data_dir = None
+
     df = step1_load_data(path=data_path or DATA_PATH, data_dir=data_dir)
-    X, y, y_encoder, feature_encoders = step2_prepare_features_and_target(df)
+
+    if "MigraineType" in df.columns:
+        target_col = "MigraineType"
+    elif TARGET in df.columns:
+        target_col = TARGET
+    else:
+        raise ValueError("No target column found. Expected 'MigraineType' or 'Type'.")
+
+    X, y, y_encoder, num_imputer, cat_imputer = step2_prepare_features_and_target(df, target_col)
     X_train, X_test, y_train, y_test = step5_split(
         X, y, df=df, stratify_by_patient=stratify_by_patient and "patient_id" in df.columns
     )
     n_classes = len(np.unique(y))
     model = step6_train(X_train, y_train, X_test, y_test, n_classes)
     step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder)
-    step9_save(model, y_encoder, feature_encoders, X.columns.tolist())
+    step9_save(model, y_encoder, X.columns.tolist(), num_imputer=num_imputer, cat_imputer=cat_imputer)
 
     print("\n" + "=" * 60)
     print("Pipeline finished. Use predictModel.py for inference.")
@@ -186,9 +270,17 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
 
 if __name__ == "__main__":
     import sys
-    # Train on Data folder (per-person attack files) if Data/ exists and no arg given
-    if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
-        run_pipeline(data_path=sys.argv[1])
+    # Train on labeled folder if present, else Data folder (per-person attack files)
+    if len(sys.argv) > 1:
+        arg = sys.argv[1]
+        if os.path.isdir(arg):
+            run_pipeline(data_dir=arg)
+        elif os.path.isfile(arg):
+            run_pipeline(data_path=arg)
+        else:
+            run_pipeline()
+    elif os.path.isdir(LABELED_DIR):
+        run_pipeline(data_dir=LABELED_DIR)
     elif os.path.isdir(DATA_DIR):
         run_pipeline(data_dir=DATA_DIR)
     else:

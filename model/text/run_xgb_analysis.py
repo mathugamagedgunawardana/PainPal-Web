@@ -4,6 +4,7 @@ XGBoost Model Analysis for Migraine Data
 Analyzes migraine_data.csv using XGBoost classifier
 """
 
+import os
 import pandas as pd
 import numpy as np
 import xgboost as xgb
@@ -13,15 +14,30 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from data_loader import load_data_from_data_folder, load_data_single, ID_COLS
+
 # Set style for plots
 sns.set_style("whitegrid")
 
-# Step 1: Load the dataset
+# Config
+DATA_PATH = "migraine_data.csv"
+DATA_DIR = "Data"  # folder with patient_*_migraine_attacks.csv
+CATEGORICAL_COLS = ["Location", "Character", "DPF"]
+TARGET = "Type"
+RANDOM_STATE = 42
+TEST_SIZE = 0.2
+STRATIFY_BY_PATIENT = True  # keep patient attacks together in train/test
+
+# Step 1: Load the dataset (prefer Data/ folder if present)
 print("=" * 60)
 print("Loading migraine dataset...")
 print("=" * 60)
-
-df = pd.read_csv("migraine_data.csv")
+if os.path.isdir(DATA_DIR):
+    df = load_data_from_data_folder(DATA_DIR)
+    print(f"Loaded combined data from {DATA_DIR}")
+else:
+    df = load_data_single(DATA_PATH) if os.path.isfile(DATA_PATH) else pd.read_csv(DATA_PATH)
+    print(f"Loaded single file: {DATA_PATH}")
 print(f"Dataset shape: {df.shape}")
 print(f"\nFirst few rows:\n{df.head()}")
 print(f"\nColumn names:\n{df.columns.tolist()}")
@@ -32,8 +48,8 @@ print(f"\nMissing values:\n{df.isnull().sum().sum()}")
 print("\n" + "=" * 60)
 print("Target Variable Analysis")
 print("=" * 60)
-print(f"\nTarget distribution:\n{df['Type'].value_counts()}")
-print(f"\nTarget value proportions:\n{df['Type'].value_counts(normalize=True)}")
+print(f"\nTarget distribution:\n{df[TARGET].value_counts()}")
+print(f"\nTarget value proportions:\n{df[TARGET].value_counts(normalize=True)}")
 
 # Step 3: Prepare the data
 print("\n" + "=" * 60)
@@ -42,11 +58,15 @@ print("=" * 60)
 
 # Encode categorical features
 label_encoders = {}
-categorical_cols = ['Location', 'Character', 'DPF']
 
-X = df.drop('Type', axis=1).copy()
+# Drop target and any ID columns (patient_id, attack_id) so they are not used as features
+drop_cols = [TARGET]
+for c in ID_COLS:
+    if c in df.columns:
+        drop_cols.append(c)
+X = df.drop(columns=[c for c in drop_cols if c in df.columns]).copy()
 
-for col in categorical_cols:
+for col in CATEGORICAL_COLS:
     if col in X.columns:  
         le = LabelEncoder()
         X[col] = le.fit_transform(X[col].astype(str))
@@ -55,7 +75,7 @@ for col in categorical_cols:
 
 # Encode the target label
 y_encoder = LabelEncoder()
-y = y_encoder.fit_transform(df['Type'].astype(str))
+y = y_encoder.fit_transform(df[TARGET].astype(str))
 print(f"\nTarget encoding: {dict(zip(y_encoder.classes_, y_encoder.transform(y_encoder.classes_)))}")
 
 print(f"\nFeatures shape: {X.shape}")
@@ -65,10 +85,21 @@ print(f"Target shape: {y.shape}")
 print("\n" + "=" * 60)
 print("Splitting data (80/20 train/test)...")
 print("=" * 60)
-
-X_train, X_test, y_train, y_test = train_test_split(    
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+if STRATIFY_BY_PATIENT and "patient_id" in df.columns:
+    patients = df["patient_id"].unique()
+    n_test = max(1, int(len(patients) * TEST_SIZE))
+    rng = np.random.default_rng(RANDOM_STATE)
+    rng.shuffle(patients)
+    test_patients = set(patients[:n_test])
+    train_idx = np.where(~df["patient_id"].isin(test_patients))[0]
+    test_idx = np.where(df["patient_id"].isin(test_patients))[0]
+    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+    y_train, y_test = y[train_idx], y[test_idx]
+    print(f"Split by patient: {len(patients) - n_test} train patients, {n_test} test patients")
+else:
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
+    )
 
 print(f"Training set size: {X_train.shape[0]}")
 print(f"Test set size: {X_test.shape[0]}")
@@ -80,18 +111,22 @@ print("\n" + "=" * 60)
 print("Training XGBoost Classifier...")
 print("=" * 60)
 
+# Use GPU if available (XGBoost 2.0+: device="cuda")
+_device = "cuda"  # set to "cpu" to force CPU
 model = xgb.XGBClassifier(
     objective='multi:softmax',
     num_class=len(np.unique(y)),
     eval_metric='mlogloss',
     use_label_encoder=False,
-    random_state=42,
+    random_state=RANDOM_STATE,
     n_estimators=100,
     max_depth=6,
     learning_rate=0.1,
     subsample=0.8,
     colsample_bytree=0.8,
-    verbosity=0
+    verbosity=0,
+    tree_method="hist",
+    device=_device,
 )
 
 model.fit(
