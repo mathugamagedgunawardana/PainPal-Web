@@ -11,19 +11,47 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Subset, random_split
 from torchvision import transforms, datasets, models
 
+import numpy as np
+from sklearn.utils.class_weight import compute_class_weight
 from data_loader import get_class_folders, count_images
 from save_model import save_artifacts
 
 # Config
 DATA_DIR = "Data"  # folder with subdirs: migraine/, glioma/, meningioma/, pituitary/, no_tumor/
 IMAGE_SIZE = 224
-BATCH_SIZE = 32
-EPOCHS = 15
+BATCH_SIZE = 64   # larger = faster on GPU (reduce to 32 if out-of-memory)
+EPOCHS = 10       # reduce for quicker runs (increase for better accuracy)
 LR = 1e-4
 RANDOM_STATE = 42
 TEST_RATIO = 0.2
 VAL_RATIO = 0.1
 ARTIFACTS_DIR = "artifacts"
+# Use GPU for training if available (set to False to force CPU)
+USE_GPU = True
+# Mixed precision (AMP) on GPU: ~2x faster, set False if you see NaN loss
+USE_AMP = True
+# DataLoader workers when using GPU (0 = main process only; 4 typical for GPU)
+NUM_WORKERS = 4
+
+
+def _get_device():
+    """Return CUDA device if USE_GPU and available, else CPU."""
+    if USE_GPU and torch.cuda.is_available():
+        device = torch.device("cuda")
+        # Optimize conv layers (faster when input sizes are fixed)
+        torch.backends.cudnn.benchmark = True
+        return device
+    return torch.device("cpu")
+
+
+def _print_gpu_status(device):
+    """Print whether GPU is in use and device name (for debugging)."""
+    if device.type == "cuda":
+        name = torch.cuda.get_device_name(0)
+        mem = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        print(f"  GPU: Yes  ({name}, {mem:.1f} GB)")
+    else:
+        print("  GPU: No   (using CPU)")
 
 
 def step1_load_data(data_dir: str):
@@ -81,8 +109,8 @@ def step5_split_dataset(dataset, val_ratio=VAL_RATIO, test_ratio=TEST_RATIO):
     return train_ds, val_ds, test_ds
 
 
-def step6_train_resnet(train_loader, val_loader, num_classes, device):
-    """Step 6: Train ResNet18 (pretrained) with new classifier head."""
+def step6_train_resnet(train_loader, val_loader, num_classes, device, use_amp=False, class_weights=None):
+    """Step 6: Train ResNet18 (pretrained) with new classifier head. use_amp=True for mixed precision. class_weights helps with imbalanced classes."""
     print("\n" + "=" * 60)
     print("Step 6: Train ResNet18")
     print("=" * 60)
@@ -90,24 +118,40 @@ def step6_train_resnet(train_loader, val_loader, num_classes, device):
     model.fc = nn.Linear(model.fc.in_features, num_classes)
     model = model.to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=LR)
-    criterion = nn.CrossEntropyLoss()
+    if class_weights is not None:
+        class_weights = class_weights.to(device)
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
+        print("  Using class weights (balanced) for imbalanced data")
+    else:
+        criterion = nn.CrossEntropyLoss()
+    scaler = torch.amp.GradScaler("cuda") if (use_amp and device.type == "cuda") else None
+    if use_amp and device.type == "cuda":
+        print("  Using mixed precision (AMP) for faster training")
 
     for epoch in range(EPOCHS):
         model.train()
         running_loss = 0.0
         for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
-            opt.zero_grad()
-            out = model(images)
-            loss = criterion(out, labels)
-            loss.backward()
-            opt.step()
+            images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
+            opt.zero_grad(set_to_none=True)
+            if scaler is not None:
+                with torch.amp.autocast("cuda"):
+                    out = model(images)
+                    loss = criterion(out, labels)
+                scaler.scale(loss).backward()
+                scaler.step(opt)
+                scaler.update()
+            else:
+                out = model(images)
+                loss = criterion(out, labels)
+                loss.backward()
+                opt.step()
             running_loss += loss.item()
         model.eval()
         correct, total = 0, 0
         with torch.no_grad():
             for images, labels in val_loader:
-                images, labels = images.to(device), labels.to(device)
+                images, labels = images.to(device, non_blocking=True), labels.to(device, non_blocking=True)
                 pred = model(images).argmax(dim=1)
                 correct += (pred == labels).sum().item()
                 total += labels.size(0)
@@ -133,8 +177,15 @@ def step7_8_evaluate(model, test_loader, class_names, device):
     from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
     acc = accuracy_score(all_true, all_pred)
     print(f"  Test accuracy: {acc:.4f}")
-    print("\n  Classification report:\n", classification_report(all_true, all_pred, target_names=class_names))
-    print("  Confusion matrix:\n", confusion_matrix(all_true, all_pred))
+    # Include all classes even if test set has no samples for some (labels=...)
+    labels_idx = list(range(len(class_names)))
+    print(
+        "\n  Classification report:\n",
+        classification_report(
+            all_true, all_pred, labels=labels_idx, target_names=class_names, zero_division=0
+        ),
+    )
+    print("  Confusion matrix:\n", confusion_matrix(all_true, all_pred, labels=labels_idx))
     return acc
 
 
@@ -152,8 +203,11 @@ def run_pipeline(data_dir=None):
     data_dir = os.path.abspath(data_dir)
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"  Device: {device}")
+    device = _get_device()
+    num_workers = NUM_WORKERS if device.type == "cuda" else 0
+    pin_memory = device.type == "cuda"
+    _print_gpu_status(device)
+    print(f"  Device: {device}  (num_workers={num_workers}, pin_memory={pin_memory})")
 
     # Step 1
     data_dir, classes, total = step1_load_data(data_dir)
@@ -169,17 +223,33 @@ def run_pipeline(data_dir=None):
 
     # Step 5: split (we need consistent indices; ImageFolder same order)
     train_ds, val_ds, test_ds = step5_split_dataset(full_dataset)
+    # Class weights from training set (one weight per class index 0..num_classes-1)
+    train_targets = np.array(full_dataset.targets)[train_ds.indices]
+    unique_classes = np.unique(train_targets)
+    cw = compute_class_weight("balanced", classes=unique_classes, y=train_targets)
+    class_weights = torch.ones(num_classes, dtype=torch.float32)
+    for i, c in enumerate(unique_classes):
+        class_weights[c] = float(cw[i])
     # Rebuild train with train_tf
     train_dataset = Subset(
         full_dataset_train_tf,
         train_ds.indices,
     )
-    val_loader = DataLoader(Subset(full_dataset, val_ds.indices), batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
-    test_loader = DataLoader(Subset(full_dataset, test_ds.indices), batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+    loader_kw = dict(
+        batch_size=BATCH_SIZE,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
+    )
+    val_loader = DataLoader(Subset(full_dataset, val_ds.indices), shuffle=False, **loader_kw)
+    test_loader = DataLoader(Subset(full_dataset, test_ds.indices), shuffle=False, **loader_kw)
+    train_loader = DataLoader(train_dataset, shuffle=True, **loader_kw)
 
     # Step 6
-    model = step6_train_resnet(train_loader, val_loader, num_classes, device)
+    use_amp = USE_AMP and device.type == "cuda"
+    model = step6_train_resnet(
+        train_loader, val_loader, num_classes, device, use_amp=use_amp, class_weights=class_weights
+    )
 
     # Step 7–8
     step7_8_evaluate(model, test_loader, class_names, device)

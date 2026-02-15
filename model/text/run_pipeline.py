@@ -36,6 +36,13 @@ RANDOM_STATE = 42
 TEST_SIZE = 0.2
 # When using Data folder: split by patient so test set = unseen patients
 STRATIFY_BY_PATIENT = True
+# Use GPU for XGBoost if available (set to "cpu" to force CPU)
+USE_GPU = True
+
+
+def _xgb_device():
+    """Return 'cuda' for GPU, else 'cpu'. Set USE_GPU=False to force CPU."""
+    return "cuda" if USE_GPU else "cpu"
 
 
 def step1_load_data(path=None, data_dir=None):
@@ -151,6 +158,8 @@ def step6_train(X_train, y_train, X_test, y_test, n_classes):
     weight_map = dict(zip(np.unique(y_train), class_weights))
     sample_weight = np.array([weight_map[c] for c in y_train])
 
+    device = _xgb_device()
+    print(f"  GPU: {'Yes' if device == 'cuda' else 'No'}  (XGBoost device={device})")
     model = xgb.XGBClassifier(
         objective="multi:softprob",
         num_class=n_classes,
@@ -165,6 +174,8 @@ def step6_train(X_train, y_train, X_test, y_test, n_classes):
         min_child_weight=1,
         reg_lambda=1.0,
         verbosity=0,
+        tree_method="hist",
+        device=device,
     )
     model.fit(
         X_train,

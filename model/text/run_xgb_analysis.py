@@ -111,6 +111,8 @@ print("\n" + "=" * 60)
 print("Training XGBoost Classifier...")
 print("=" * 60)
 
+# Use GPU if available (XGBoost 2.0+: device="cuda")
+_device = "cuda"  # set to "cpu" to force CPU
 model = xgb.XGBClassifier(
     objective='multi:softmax',
     num_class=len(np.unique(y)),
@@ -122,7 +124,9 @@ model = xgb.XGBClassifier(
     learning_rate=0.1,
     subsample=0.8,
     colsample_bytree=0.8,
-    verbosity=0
+    verbosity=0,
+    tree_method="hist",
+    device=_device,
 )
 
 model.fit(
