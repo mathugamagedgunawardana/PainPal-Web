@@ -38,9 +38,9 @@ const DoctorLayout = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <main className="flex-1">
+      <main className="flex-1 min-w-0">
         <Header />
-        <div className="p-6">
+        <div>
           {children}
         </div>
       </main>
