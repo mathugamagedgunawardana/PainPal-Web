@@ -1,20 +1,45 @@
 #!/usr/bin/env python3
 """
 Brain image classification pipeline (Steps 1–9).
-ResNet: classify Migraine vs Not Migraine; if not migraine, tumor type (glioma, meningioma, pituitary, no_tumor).
-Same flow as text/run_pipeline: load → prepare → split → train → evaluate → save.
+Binary classification: tumor vs non_tumor (ResNet18).
+Folder names in data_loader.TUMOR_FOLDER_NAMES -> tumor; all others -> non_tumor.
 """
 import os
 import sys
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Subset, random_split
-from torchvision import transforms, datasets, models
+from torch.utils.data import DataLoader, Dataset, Subset, random_split
+from torchvision import transforms, models
+from PIL import Image
 
 import numpy as np
 from sklearn.utils.class_weight import compute_class_weight
-from data_loader import get_class_folders, count_images
+from data_loader import (
+    get_class_folders,
+    count_images,
+    list_binary_image_paths,
+    TUMOR_FOLDER_NAMES,
+    BINARY_CLASS_NAMES,
+)
 from save_model import save_artifacts
+
+
+class BinaryImageDataset(Dataset):
+    """Dataset of (image_path, binary_label) for tumor (1) vs non_tumor (0)."""
+
+    def __init__(self, pairs, transform=None):
+        self.pairs = pairs  # list of (path, 0|1)
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.pairs)
+
+    def __getitem__(self, idx):
+        path, label = self.pairs[idx]
+        img = Image.open(path).convert("RGB")
+        if self.transform:
+            img = self.transform(img)
+        return img, label
 
 # Config
 DATA_DIR = "Data"  # folder with subdirs: migraine/, glioma/, meningioma/, pituitary/, no_tumor/
@@ -32,6 +57,8 @@ USE_GPU = True
 USE_AMP = True
 # DataLoader workers when using GPU (0 = main process only; 4 typical for GPU)
 NUM_WORKERS = 4
+# At inference: only predict "tumor" if P(tumor) >= this threshold; else "non_tumor" (for OOD / other images)
+TUMOR_CONFIDENCE_THRESHOLD = 0.7
 
 
 def _get_device():
@@ -55,20 +82,23 @@ def _print_gpu_status(device):
 
 
 def step1_load_data(data_dir: str):
-    """Step 1: Discover dataset (image folders per class)."""
+    """Step 1: Discover dataset and build binary (tumor / non_tumor) image list."""
     print("\n" + "=" * 60)
-    print("Step 1: Load data (brain image folders)")
+    print("Step 1: Load data (binary: tumor vs non_tumor)")
     print("=" * 60)
     data_dir = os.path.abspath(data_dir)
     if not os.path.isdir(data_dir):
         raise FileNotFoundError(f"Data directory not found: {data_dir}")
     classes = get_class_folders(data_dir)
     total, counts = count_images(data_dir)
+    pairs = list_binary_image_paths(data_dir)
+    n_tumor = sum(1 for _, l in pairs if l == 1)
+    n_non_tumor = len(pairs) - n_tumor
     print(f"  Data dir: {data_dir}")
-    print(f"  Classes: {classes}")
-    print(f"  Counts: {counts}")
-    print(f"  Total images: {total}")
-    return data_dir, classes, total
+    print(f"  Folders (tumor): {[c for c in classes if c in TUMOR_FOLDER_NAMES]}")
+    print(f"  Folders (non_tumor): {[c for c in classes if c not in TUMOR_FOLDER_NAMES]}")
+    print(f"  Total images: {total}  (tumor={n_tumor}, non_tumor={n_non_tumor})")
+    return data_dir, pairs, total
 
 
 def step2_prepare_transforms():
@@ -209,32 +239,27 @@ def run_pipeline(data_dir=None):
     _print_gpu_status(device)
     print(f"  Device: {device}  (num_workers={num_workers}, pin_memory={pin_memory})")
 
-    # Step 1
-    data_dir, classes, total = step1_load_data(data_dir)
+    # Step 1: load paths and binary labels (tumor=1, non_tumor=0)
+    data_dir, pairs, total = step1_load_data(data_dir)
     if total == 0:
         raise ValueError("No images found. Use folder layout: Data/migraine/*.png, Data/glioma/*.png, ...")
 
-    # Step 2–4: datasets and transforms (allow_empty=True for placeholder classes e.g. migraine)
+    # Step 2–4: transforms and binary dataset
     train_tf, eval_tf = step2_prepare_transforms()
-    full_dataset = datasets.ImageFolder(data_dir, transform=eval_tf, allow_empty=True)
-    full_dataset_train_tf = datasets.ImageFolder(data_dir, transform=train_tf, allow_empty=True)
-    class_names = full_dataset.classes
-    num_classes = len(class_names)
+    full_dataset = BinaryImageDataset(pairs, transform=eval_tf)
+    full_dataset_train_tf = BinaryImageDataset(pairs, transform=train_tf)
+    class_names = BINARY_CLASS_NAMES  # ["non_tumor", "tumor"]
+    num_classes = 2
 
-    # Step 5: split (we need consistent indices; ImageFolder same order)
+    # Step 5: split
     train_ds, val_ds, test_ds = step5_split_dataset(full_dataset)
-    # Class weights from training set (one weight per class index 0..num_classes-1)
-    train_targets = np.array(full_dataset.targets)[train_ds.indices]
+    train_targets = np.array([pairs[i][1] for i in train_ds.indices])
     unique_classes = np.unique(train_targets)
     cw = compute_class_weight("balanced", classes=unique_classes, y=train_targets)
     class_weights = torch.ones(num_classes, dtype=torch.float32)
     for i, c in enumerate(unique_classes):
         class_weights[c] = float(cw[i])
-    # Rebuild train with train_tf
-    train_dataset = Subset(
-        full_dataset_train_tf,
-        train_ds.indices,
-    )
+    train_dataset = Subset(full_dataset_train_tf, train_ds.indices)
     loader_kw = dict(
         batch_size=BATCH_SIZE,
         num_workers=num_workers,
@@ -254,8 +279,13 @@ def run_pipeline(data_dir=None):
     # Step 7–8
     step7_8_evaluate(model, test_loader, class_names, device)
 
-    # Step 9
-    transforms_config = {"image_size": IMAGE_SIZE, "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
+    # Step 9 (save threshold so inference treats low-confidence / other images as non_tumor)
+    transforms_config = {
+        "image_size": IMAGE_SIZE,
+        "mean": [0.485, 0.456, 0.406],
+        "std": [0.229, 0.224, 0.225],
+        "tumor_confidence_threshold": TUMOR_CONFIDENCE_THRESHOLD,
+    }
     step9_save(model, class_names, transforms_config=transforms_config)
 
     print("\n" + "=" * 60)
