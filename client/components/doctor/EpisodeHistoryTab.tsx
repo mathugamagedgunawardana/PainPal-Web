@@ -25,10 +25,10 @@ export function EpisodeHistoryTab({ episodeHistory }: EpisodeHistoryTabProps) {
           <Activity className="w-5 h-5 text-blue-600" />
           Migraine Episode Timeline
         </h3>
-        <Button variant="default" size="sm" className="rounded-xl bg-blue-600 hover:bg-blue-700">
+{/*         <Button variant="default" size="sm" className="rounded-xl bg-blue-600 hover:bg-blue-700">
           <TrendingUp className="w-4 h-4 mr-2" />
           View Chart
-        </Button>
+        </Button> */}
       </div>
       {episodeHistory.map((episode, idx) => (
         <div key={idx} className="flex items-start gap-4 p-4 sm:p-5 rounded-xl border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all">

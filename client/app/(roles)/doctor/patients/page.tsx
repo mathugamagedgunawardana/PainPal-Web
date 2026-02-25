@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -35,87 +35,27 @@ import { NotesTab } from '@/components/doctor/NotesTab'
 import { ReportsTab } from '@/components/doctor/ReportsTab'
 import { CommunicationTab } from '@/components/doctor/CommunicationTab'
 
-// Mock patient data
-const mockPatients = [
-  {
-    id: 1,
-    name: 'Sarah Chen',
-    age: 34,
-    gender: 'Female',
-    photo: '/avatars/sarah.jpg',
-    riskLevel: 'high',
-    lastVisit: '2024-12-10',
-    nextAppointment: '2024-12-20',
-    phone: '+1 (555) 123-4567',
-    email: 'sarah.chen@email.com',
-    address: '123 Oak Street, San Francisco, CA',
-    migraineDays: 15,
-    adherence: 78,
-    triggers: ['Stress', 'Sleep', 'Weather'],
-    currentMeds: ['Sumatriptan 50mg', 'Topiramate 25mg'],
-    recentEpisodes: 8,
-    condition: 'Chronic Migraine with Aura'
-  },
-  {
-    id: 2,
-    name: 'John Doe',
-    age: 42,
-    gender: 'Male',
-    photo: '/avatars/john.jpg',
-    riskLevel: 'medium',
-    lastVisit: '2024-12-08',
-    nextAppointment: '2024-12-22',
-    phone: '+1 (555) 234-5678',
-    email: 'john.doe@email.com',
-    address: '456 Maple Ave, Los Angeles, CA',
-    migraineDays: 8,
-    adherence: 92,
-    triggers: ['Bright Lights', 'Caffeine'],
-    currentMeds: ['Rizatriptan 10mg'],
-    recentEpisodes: 4,
-    condition: 'Episodic Migraine'
-  },
-  {
-    id: 3,
-    name: 'Emily Smith',
-    age: 28,
-    gender: 'Female',
-    photo: '/avatars/emily.jpg',
-    riskLevel: 'low',
-    lastVisit: '2024-12-05',
-    nextAppointment: '2025-01-10',
-    phone: '+1 (555) 345-6789',
-    email: 'emily.smith@email.com',
-    address: '789 Pine Rd, Seattle, WA',
-    migraineDays: 4,
-    adherence: 95,
-    triggers: ['Hormonal Changes'],
-    currentMeds: ['Ibuprofen 400mg'],
-    recentEpisodes: 2,
-    condition: 'Menstrual Migraine'
-  },
-  {
-    id: 4,
-    name: 'Michael Johnson',
-    age: 51,
-    gender: 'Male',
-    photo: '/avatars/michael.jpg',
-    riskLevel: 'medium',
-    lastVisit: '2024-12-12',
-    nextAppointment: '2024-12-28',
-    phone: '+1 (555) 456-7890',
-    email: 'michael.j@email.com',
-    address: '321 Elm St, Boston, MA',
-    migraineDays: 10,
-    adherence: 85,
-    triggers: ['Stress', 'Dehydration', 'Bright Lights'],
-    currentMeds: ['Sumatriptan 100mg', 'Amitriptyline 10mg'],
-    recentEpisodes: 6,
-    condition: 'Chronic Migraine'
-  },
-]
+export type PatientListItem = {
+  id: string
+  name: string
+  age?: number
+  gender?: string
+  photo?: string
+  riskLevel: string
+  lastVisit?: string
+  nextAppointment?: string
+  phone?: string
+  email?: string
+  address?: string
+  migraineDays?: number
+  adherence?: number
+  triggers?: string[]
+  currentMeds?: string[]
+  recentEpisodes?: number
+  condition?: string
+}
 
-const episodeHistory: Array<{
+type EpisodeHistoryItem = {
   date: string
   severity: string
   duration: string
@@ -123,75 +63,102 @@ const episodeHistory: Array<{
   mostIntenseSymptoms: string[]
   medicationsTakenDuringPeriod: string[]
   notes?: string
-}> = [
-  {
-    date: '2024-12-15',
-    severity: 'Severe',
-    duration: '6 hours',
-    triggers: ['Stress', 'Sleep'],
-    mostIntenseSymptoms: ['Throbbing pain (R temple)', 'Nausea', 'Photophobia', 'Phonophobia'],
-    medicationsTakenDuringPeriod: ['Sumatriptan 50mg', 'Topiramate 25mg', 'Ibuprofen 400mg'],
-    notes: 'Pain peaked at hour 2. Sumatriptan taken at onset.',
-  },
-  {
-    date: '2024-12-10',
-    severity: 'Moderate',
-    duration: '4 hours',
-    triggers: ['Weather'],
-    mostIntenseSymptoms: ['Pressure pain (bilateral)', 'Light sensitivity'],
-    medicationsTakenDuringPeriod: ['Sumatriptan 50mg', 'Topiramate 25mg'],
-  },
-  {
-    date: '2024-12-05',
-    severity: 'Mild',
-    duration: '2 hours',
-    triggers: ['Caffeine'],
-    mostIntenseSymptoms: ['Mild throbbing', 'Tiredness'],
-    medicationsTakenDuringPeriod: ['Ibuprofen 400mg'],
-  },
-  {
-    date: '2024-11-28',
-    severity: 'Severe',
-    duration: '8 hours',
-    triggers: ['Stress', 'Bright Lights'],
-    mostIntenseSymptoms: ['Severe throbbing', 'Nausea', 'Vomiting', 'Visual aura', 'Photophobia'],
-    medicationsTakenDuringPeriod: ['Sumatriptan 100mg', 'Topiramate 25mg', 'Metoclopramide 10mg'],
-    notes: 'Aura preceded headache by ~20 min.',
-  },
-]
+}
 
-const medications = [
-  { name: 'Sumatriptan 50mg', frequency: 'As needed', adherence: 78, lastTaken: '2024-12-15', groupId: 1 },
-  { name: 'Topiramate 25mg', frequency: 'Daily', adherence: 92, lastTaken: '2024-12-16', groupId: 1 },
-  { name: 'Ibuprofen 400mg', frequency: 'As needed', adherence: 85, lastTaken: '2024-12-14', groupId: 3 },
-]
-
-const appointments = [
-  { date: '2024-12-20', type: 'Follow-up', doctor: 'Dr. Johnson', status: 'Scheduled' },
-  { date: '2024-12-10', type: 'Regular Check-up', doctor: 'Dr. Johnson', status: 'Completed' },
-  { date: '2024-11-15', type: 'Initial Consultation', doctor: 'Dr. Johnson', status: 'Completed' },
-]
-
-const notes = [
-  { date: '2024-12-10', note: 'Patient reports increased frequency. Adjusted medication dosage.', author: 'Dr. Johnson' },
-  { date: '2024-11-15', note: 'Initial assessment completed. Prescribed preventive treatment.', author: 'Dr. Johnson' },
-]
-
-const communications = [
-  { date: '2024-12-12', type: 'Reminder', message: 'Appointment reminder sent', channel: 'SMS' },
-  { date: '2024-12-08', type: 'Message', message: 'Medication refill approved', channel: 'Email' },
-]
+type MedicationItem = { name: string; frequency: string; adherence: number; lastTaken: string; groupId: number }
+type AppointmentItem = { date: string; type: string; doctor: string; status: string }
+type NoteItem = { date: string; note: string; author: string }
+type CommunicationItem = { date: string; type: string; message: string; channel: string }
 
 export default function PatientsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [riskFilter, setRiskFilter] = useState('all')
-  const [selectedPatient, setSelectedPatient] = useState<typeof mockPatients[0] | null>(null)
+  const [patients, setPatients] = useState<PatientListItem[]>([])
+  const [patientsLoading, setPatientsLoading] = useState(true)
+  const [patientsError, setPatientsError] = useState<string | null>(null)
+  const [selectedPatient, setSelectedPatient] = useState<PatientListItem | null>(null)
+  const [detailData, setDetailData] = useState<{
+    episodeHistory: EpisodeHistoryItem[]
+    medications: MedicationItem[]
+    appointments: AppointmentItem[]
+    notes: NoteItem[]
+    communications: CommunicationItem[]
+  } | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
 
-  const filteredPatients = mockPatients.filter(patient => {
+  useEffect(() => {
+    let cancelled = false
+    setPatientsLoading(true)
+    setPatientsError(null)
+    fetch('/api/patients', { credentials: 'include' })
+      .then((res) => {
+        if (!res.ok) throw new Error(res.status === 401 ? 'Unauthorized' : 'Failed to load patients')
+        return res.json()
+      })
+      .then((data: PatientListItem[]) => {
+        if (!cancelled) setPatients(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        if (!cancelled) setPatientsError(err.message ?? 'Failed to load patients')
+      })
+      .finally(() => {
+        if (!cancelled) setPatientsLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const fetchPatientDetail = useCallback((patientId: string) => {
+    setDetailLoading(true)
+    setDetailError(null)
+    setDetailData(null)
+    fetch(`/api/patients/${patientId}`, { credentials: 'include' })
+      .then((res) => {
+        if (!res.ok) throw new Error(res.status === 404 ? 'Patient not found' : 'Failed to load patient detail')
+        return res.json()
+      })
+      .then((data: {
+        profile: PatientListItem
+        episodeHistory: EpisodeHistoryItem[]
+        medications: MedicationItem[]
+        appointments: AppointmentItem[]
+        notes: NoteItem[]
+        communications: CommunicationItem[]
+      }) => {
+        setSelectedPatient(data.profile)
+        setDetailData({
+          episodeHistory: data.episodeHistory ?? [],
+          medications: data.medications ?? [],
+          appointments: data.appointments ?? [],
+          notes: data.notes ?? [],
+          communications: data.communications ?? [],
+        })
+      })
+      .catch((err) => {
+        setDetailError(err.message ?? 'Failed to load patient detail')
+      })
+      .finally(() => {
+        setDetailLoading(false)
+      })
+  }, [])
+
+  const handleSelectPatient = (patient: PatientListItem) => {
+    if (selectedPatient?.id === patient.id) return
+    setSelectedPatient(patient)
+    fetchPatientDetail(patient.id)
+  }
+
+  const filteredPatients = patients.filter(patient => {
     const matchesSearch = patient.name.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesRisk = riskFilter === 'all' || patient.riskLevel === riskFilter
     return matchesSearch && matchesRisk
   })
+
+  const episodeHistory = detailData?.episodeHistory ?? []
+  const medications = detailData?.medications ?? []
+  const appointments = detailData?.appointments ?? []
+  const notes = detailData?.notes ?? []
+  const communications = detailData?.communications ?? []
 
   return (
     <div className="min-h-screen bg-gradient-to-br via-purple-50 to-teal-50 p-3 sm:p-4 md:p-6 lg:p-8">
@@ -253,7 +220,16 @@ export default function PatientsPage() {
             <Badge variant="secondary" className="text-xs sm:text-sm">{filteredPatients.length} Total</Badge>
           </div>
           <div className="space-y-2 max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-300px)] overflow-y-auto pr-1 sm:pr-2">
-            {filteredPatients.map((patient) => (
+            {patientsError && (
+              <p className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">{patientsError}</p>
+            )}
+            {patientsLoading && !patientsError && (
+              <p className="text-sm text-gray-500 p-3">Loading patients…</p>
+            )}
+            {!patientsLoading && !patientsError && filteredPatients.length === 0 && (
+              <p className="text-sm text-gray-500 p-3">No patients found.</p>
+            )}
+            {!patientsLoading && filteredPatients.map((patient) => (
               <Card
                 key={patient.id}
                 className={`w-full cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] ${
@@ -261,7 +237,7 @@ export default function PatientsPage() {
                     ? 'border-2 border-purple-500 bg-gradient-to-br from-blue-50 to-purple-50 shadow-lg'
                     : 'border border-gray-200 bg-white/80 backdrop-blur-sm'
                 }`}
-                onClick={() => setSelectedPatient(patient)}
+                onClick={() => handleSelectPatient(patient)}
               >
                 <CardContent className="p-3 sm:p-4">
                   <div className="flex items-center gap-2 sm:gap-3">
@@ -273,10 +249,10 @@ export default function PatientsPage() {
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-gray-800 truncate text-sm sm:text-base">{patient.name}</h3>
-                      <p className="text-xs sm:text-sm text-gray-500">{patient.age} years • {patient.gender}</p>
+                      <p className="text-xs sm:text-sm text-gray-500">{patient.age != null ? `${patient.age} years` : '—'} • {patient.gender ?? '—'}</p>
                       <div className="flex items-center gap-1 mt-1">
                         <Clock className="w-3 h-3 text-gray-400" />
-                        <span className="text-xs text-gray-500">Last: {patient.lastVisit}</span>
+                        <span className="text-xs text-gray-500">Last: {patient.lastVisit ?? '—'}</span>
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-2">
@@ -302,6 +278,20 @@ export default function PatientsPage() {
         <div className="w-full min-w-0">
           {selectedPatient ? (
             <div className="space-y-4 sm:space-y-6 max-h-[calc(100vh-180px)] sm:max-h-[calc(100vh-200px)] overflow-y-auto pr-1 sm:pr-2">
+              {detailLoading && (
+                <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
+                  <CardContent className="p-6 text-center text-gray-500">
+                    Loading patient detail…
+                  </CardContent>
+                </Card>
+              )}
+              {detailError && !detailLoading && (
+                <Card className="bg-red-50 border-red-200">
+                  <CardContent className="p-4 text-red-700">
+                    {detailError}
+                  </CardContent>
+                </Card>
+              )}
               {/* Profile Header */}
               <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
                 <CardContent className="p-4 sm:p-6">
@@ -350,7 +340,7 @@ export default function PatientsPage() {
                         </div>
                         <div className="flex items-center gap-2 text-gray-600">
                           <Calendar className="w-3 h-3 sm:w-4 sm:h-4 text-indigo-500 flex-shrink-0" />
-                          <span>Next: {selectedPatient.nextAppointment}</span>
+                          <span>Next: {selectedPatient.nextAppointment ?? '—'}</span>
                         </div>
                       </div>
                     </div>
@@ -363,7 +353,7 @@ export default function PatientsPage() {
                 <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-all border-0">
                   <CardContent className="p-3 sm:p-4 text-center">
                     <Activity className="w-6 h-6 sm:w-8 sm:h-8 mx-auto mb-1 sm:mb-2 opacity-90" />
-                    <div className="text-2xl sm:text-3xl font-bold">{selectedPatient.recentEpisodes}</div>
+                    <div className="text-2xl sm:text-3xl font-bold">{selectedPatient.recentEpisodes ?? 0}</div>
                     <div className="text-[10px] sm:text-xs opacity-90 font-medium">Recent Episodes</div>
                     <div className="text-[9px] sm:text-xs opacity-75 mt-0.5 sm:mt-1">(Last 30 days)</div>
                   </CardContent>
@@ -371,7 +361,7 @@ export default function PatientsPage() {
                 <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg hover:shadow-xl transition-all border-0">
                   <CardContent className="p-3 sm:p-4 text-center">
                     <Calendar className="w-6 h-6 sm:w-8 sm:h-8 mx-auto mb-1 sm:mb-2 opacity-90" />
-                    <div className="text-2xl sm:text-3xl font-bold">{selectedPatient.migraineDays}</div>
+                    <div className="text-2xl sm:text-3xl font-bold">{selectedPatient.migraineDays ?? 0}</div>
                     <div className="text-[10px] sm:text-xs opacity-90 font-medium">Migraine Days</div>
                     <div className="text-[9px] sm:text-xs opacity-75 mt-0.5 sm:mt-1">(This month)</div>
                   </CardContent>
@@ -379,11 +369,11 @@ export default function PatientsPage() {
                 <Card className="bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg hover:shadow-xl transition-all border-0">
                   <CardContent className="p-3 sm:p-4 text-center">
                     <Pill className="w-6 h-6 sm:w-8 sm:h-8 mx-auto mb-1 sm:mb-2 opacity-90" />
-                    <div className="text-2xl sm:text-3xl font-bold">{selectedPatient.adherence}%</div>
+                    <div className="text-2xl sm:text-3xl font-bold">{selectedPatient.adherence ?? 0}%</div>
                     <div className="text-[10px] sm:text-xs opacity-90 font-medium">Medication Adherence</div>
                     <div className="text-[9px] sm:text-xs opacity-75 mt-0.5 sm:mt-1">
                       <TrendingUp className="w-2.5 h-2.5 sm:w-3 sm:h-3 inline mr-0.5 sm:mr-1" />
-                      {selectedPatient.adherence > 80 ? 'Excellent' : 'Needs Improvement'}
+                      {(selectedPatient.adherence ?? 0) > 80 ? 'Excellent' : 'Needs Improvement'}
                     </div>
                   </CardContent>
                 </Card>
@@ -420,8 +410,8 @@ export default function PatientsPage() {
                           <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0" />
                           <span className="font-medium text-gray-800 text-xs sm:text-sm truncate">Frequency Status</span>
                         </div>
-                        <span className={`text-sm font-bold ${selectedPatient.recentEpisodes > 6 ? 'text-red-600' : 'text-orange-600'}`}>
-                          {selectedPatient.recentEpisodes > 6 ? 'High Activity' : 'Moderate'}
+                        <span className={`text-sm font-bold ${(selectedPatient.recentEpisodes ?? 0) > 6 ? 'text-red-600' : 'text-orange-600'}`}>
+                          {(selectedPatient.recentEpisodes ?? 0) > 6 ? 'High Activity' : 'Moderate'}
                         </span>
                       </div>
                       <div className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-gradient-to-r from-blue-50 to-transparent border-l-4 border-blue-500">
@@ -429,7 +419,7 @@ export default function PatientsPage() {
                           <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0" />
                           <span className="font-medium text-gray-800 text-xs sm:text-sm truncate">Medication Compliance</span>
                         </div>
-                        <span className={`text-xs sm:text-sm font-bold flex-shrink-0 ${selectedPatient.adherence > 85 ? 'text-green-600' : 'text-orange-600'}`}>
+                        <span className={`text-xs sm:text-sm font-bold flex-shrink-0 ${(selectedPatient.adherence ?? 0) > 85 ? 'text-green-600' : 'text-orange-600'}`}>
                           {selectedPatient.adherence}%
                         </span>
                       </div>
@@ -461,7 +451,7 @@ export default function PatientsPage() {
                       <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Reported Triggers</p>
                         <div className="flex flex-wrap gap-2">
-                          {selectedPatient.triggers.map((trigger, idx) => (
+                          {(selectedPatient.triggers ?? []).map((trigger, idx) => (
                             <Badge key={idx} className="bg-blue-100 text-blue-700 text-xs">
                               {trigger}
                             </Badge>
@@ -480,7 +470,7 @@ export default function PatientsPage() {
                             />
                           ))}
                         </div>
-                        <p className="text-xs text-gray-500 mt-2">Trending: {selectedPatient.recentEpisodes > 6 ? '📈 Increasing' : '📉 Stable'}</p>
+                        <p className="text-xs text-gray-500 mt-2">Trending: {(selectedPatient.recentEpisodes ?? 0) > 6 ? '📈 Increasing' : '📉 Stable'}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -497,12 +487,12 @@ export default function PatientsPage() {
                     </h3>
                     <div className="space-y-2 sm:space-y-3">
                       <div className={`p-3 sm:p-4 rounded-lg border-2 ${
-                        new Date(selectedPatient.nextAppointment) < new Date('2024-12-20')
+                        !selectedPatient.nextAppointment || new Date(selectedPatient.nextAppointment) < new Date()
                           ? 'border-red-200 bg-red-50'
                           : 'border-green-200 bg-green-50'
                       }`}>
                         <p className="text-xs font-semibold text-gray-600 uppercase mb-1">Upcoming</p>
-                        <p className="font-bold text-gray-800 text-sm sm:text-base">{selectedPatient.nextAppointment}</p>
+                        <p className="font-bold text-gray-800 text-sm sm:text-base">{selectedPatient.nextAppointment ?? '—'}</p>
                         <p className="text-xs text-gray-500 mt-1">📅 Appointment scheduled</p>
                       </div>
                       <Button className="w-full rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold text-xs sm:text-sm">
