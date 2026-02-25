@@ -115,39 +115,49 @@ const mockPatients = [
   },
 ]
 
-// Medication Groups
-const medicationGroups = [
+const episodeHistory: Array<{
+  date: string
+  severity: string
+  duration: string
+  triggers: string[]
+  mostIntenseSymptoms: string[]
+  medicationsTakenDuringPeriod: string[]
+  notes?: string
+}> = [
   {
-    id: 1,
-    name: 'Acute Treatment Protocol',
-    type: 'rescue',
-    medications: ['Sumatriptan 50mg', 'Topiramate 25mg'],
-    color: 'blue',
-    adherence: 78
+    date: '2024-12-15',
+    severity: 'Severe',
+    duration: '6 hours',
+    triggers: ['Stress', 'Sleep'],
+    mostIntenseSymptoms: ['Throbbing pain (R temple)', 'Nausea', 'Photophobia', 'Phonophobia'],
+    medicationsTakenDuringPeriod: ['Sumatriptan 50mg', 'Topiramate 25mg', 'Ibuprofen 400mg'],
+    notes: 'Pain peaked at hour 2. Sumatriptan taken at onset.',
   },
   {
-    id: 2,
-    name: 'Preventive Care Regimen',
-    type: 'preventive',
-    medications: ['Topiramate 25mg'],
-    color: 'purple',
-    adherence: 92
+    date: '2024-12-10',
+    severity: 'Moderate',
+    duration: '4 hours',
+    triggers: ['Weather'],
+    mostIntenseSymptoms: ['Pressure pain (bilateral)', 'Light sensitivity'],
+    medicationsTakenDuringPeriod: ['Sumatriptan 50mg', 'Topiramate 25mg'],
   },
   {
-    id: 3,
-    name: 'Alternative Relief Protocol',
-    type: 'rescue',
-    medications: ['Ibuprofen 400mg'],
-    color: 'teal',
-    adherence: 85
+    date: '2024-12-05',
+    severity: 'Mild',
+    duration: '2 hours',
+    triggers: ['Caffeine'],
+    mostIntenseSymptoms: ['Mild throbbing', 'Tiredness'],
+    medicationsTakenDuringPeriod: ['Ibuprofen 400mg'],
   },
-]
-
-const episodeHistory: Array<{ date: string; severity: string; duration: string; triggers: string[]; medicationGroupId: number; medicationGroupName: string; effectiveness: 'high' | 'low' | 'moderate' }> = [
-  { date: '2024-12-15', severity: 'Severe', duration: '6 hours', triggers: ['Stress', 'Sleep'], medicationGroupId: 1, medicationGroupName: 'Acute Treatment Protocol', effectiveness: 'low' },
-  { date: '2024-12-10', severity: 'Moderate', duration: '4 hours', triggers: ['Weather'], medicationGroupId: 1, medicationGroupName: 'Acute Treatment Protocol', effectiveness: 'moderate' },
-  { date: '2024-12-05', severity: 'Mild', duration: '2 hours', triggers: ['Caffeine'], medicationGroupId: 3, medicationGroupName: 'Alternative Relief Protocol', effectiveness: 'high' },
-  { date: '2024-11-28', severity: 'Severe', duration: '8 hours', triggers: ['Stress', 'Bright Lights'], medicationGroupId: 1, medicationGroupName: 'Acute Treatment Protocol', effectiveness: 'low' },
+  {
+    date: '2024-11-28',
+    severity: 'Severe',
+    duration: '8 hours',
+    triggers: ['Stress', 'Bright Lights'],
+    mostIntenseSymptoms: ['Severe throbbing', 'Nausea', 'Vomiting', 'Visual aura', 'Photophobia'],
+    medicationsTakenDuringPeriod: ['Sumatriptan 100mg', 'Topiramate 25mg', 'Metoclopramide 10mg'],
+    notes: 'Aura preceded headache by ~20 min.',
+  },
 ]
 
 const medications = [
@@ -477,111 +487,8 @@ export default function PatientsPage() {
                 </Card>
               </div>
 
-              {/* Active Medications & Next Steps */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-                {/* Current Medications */}
-                <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0 md:col-span-2">
-                  <CardContent className="p-4 sm:p-6">
-                    <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-                      <Pill className="w-4 h-4 sm:w-5 sm:h-5 text-teal-600" />
-                      Medication Groups & Efficacy
-                    </h3>
-                    <div className="space-y-3 sm:space-y-4">
-                      {medicationGroups.map((group, idx) => {
-                        // Calculate efficacy based on episodes using this medication group
-                        const episodesOnGroup = episodeHistory.filter(ep => ep.medicationGroupId === group.id)
-                        const avgEffectiveness = episodesOnGroup.length > 0
-                          ? episodesOnGroup.reduce((acc, ep) => 
-                              acc + (ep.effectiveness === 'high' ? 3 : ep.effectiveness === 'moderate' ? 2 : 1), 0
-                            ) / episodesOnGroup.length
-                          : 0
-                        const efficacyScore = Math.round((avgEffectiveness / 3) * 100)
-                        
-                        return (
-                          <div key={idx} className="p-3 sm:p-5 rounded-xl border-2 border-gray-200 bg-gradient-to-br from-gray-50 to-white hover:shadow-lg transition-all hover:border-teal-300">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <div className={`w-3 h-3 rounded-full ${
-                                    group.color === 'blue' ? 'bg-blue-500' :
-                                    group.color === 'purple' ? 'bg-purple-500' :
-                                    'bg-teal-500'
-                                  }`}></div>
-                                  <h4 className="font-bold text-gray-800 text-lg">{group.name}</h4>
-                                </div>
-                                {episodesOnGroup.length > 0 && (
-                                  <Badge className="text-xs bg-blue-100 text-blue-700 mb-2">
-                                    {episodesOnGroup.length} episode{episodesOnGroup.length > 1 ? 's' : ''} recorded
-                                  </Badge>
-                                )}
-                                <div className="flex flex-wrap gap-1 mt-2">
-                                  {group.medications.map((med, i) => (
-                                    <Badge key={i} variant="outline" className="text-xs">
-                                      {med}
-                                    </Badge>
-                                  ))}
-                                </div>
-                                <p className="text-xs text-gray-500 mt-2">
-                                  <span className="font-semibold">Type:</span> {group.type === 'rescue' ? '🚨 Rescue' : '🛡️ Preventive'}
-                                </p>
-                              </div>
-                              <Badge className={`text-xs font-bold ${
-                                group.adherence > 85 ? 'bg-green-100 text-green-700' :
-                                group.adherence > 70 ? 'bg-yellow-100 text-yellow-700' :
-                                'bg-red-100 text-red-700'
-                              }`}>
-                                {group.adherence}% adherence
-                              </Badge>
-                            </div>
-                            
-                            {episodesOnGroup.length > 0 && (
-                              <div className="mb-3 p-3 bg-white rounded-lg border border-gray-200">
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="text-xs font-semibold text-gray-600">Group Efficacy Score</span>
-                                  <span className={`text-sm font-bold ${
-                                    efficacyScore >= 70 ? 'text-green-600' :
-                                    efficacyScore >= 50 ? 'text-yellow-600' :
-                                    'text-red-600'
-                                  }`}>
-                                    {efficacyScore}%
-                                  </span>
-                                </div>
-                                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                                  <div
-                                    className={`h-2 rounded-full transition-all duration-500 ${
-                                      efficacyScore >= 70 ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
-                                      efficacyScore >= 50 ? 'bg-gradient-to-r from-yellow-500 to-amber-500' :
-                                      'bg-gradient-to-r from-red-500 to-rose-500'
-                                    }`}
-                                    style={{ width: `${efficacyScore}%` }}
-                                  />
-                                </div>
-                                <p className="text-xs text-gray-500 mt-1">
-                                  {efficacyScore >= 70 ? '✓ Highly effective treatment' :
-                                   efficacyScore >= 50 ? '⚡ Moderately effective' :
-                                   '⚠ Consider alternative treatment'}
-                                </p>
-                              </div>
-                            )}
-                            
-                            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                              <div
-                                className={`h-2 rounded-full transition-all duration-500 ${
-                                  group.adherence > 85 ? 'bg-green-500' :
-                                  group.adherence > 70 ? 'bg-yellow-500' :
-                                  'bg-red-500'
-                                }`}
-                                style={{ width: `${group.adherence}%` }}
-                              />
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Quick Actions & Next Appointment */}
+              {/* Next Steps */}
+              <div className="grid grid-cols-1 gap-4 sm:gap-6">
                 <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
                   <CardContent className="p-4 sm:p-6">
                     <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
@@ -649,7 +556,7 @@ export default function PatientsPage() {
 
                     {/* Episode History */}
                     <TabsContent value="history">
-                      <EpisodeHistoryTab episodeHistory={episodeHistory} medicationGroups={medicationGroups} />
+                      <EpisodeHistoryTab episodeHistory={episodeHistory} />
                     </TabsContent>
 
                     {/* Medications */}
