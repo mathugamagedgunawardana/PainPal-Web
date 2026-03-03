@@ -23,32 +23,53 @@ function parseDate(isoDate: string): Date {
 async function main() {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, SALT_ROUNDS)
 
-  // 1. Clinic
-  const clinic = await prisma.clinic.create({
-    data: {
-      name: 'Headache & Migraine Center',
-      address: '100 Medical Plaza, San Francisco, CA',
-    },
+  // 1. Clinic (idempotent: use existing if present)
+  let clinic = await prisma.clinic.findFirst({
+    where: { name: 'Headache & Migraine Center' },
   })
-  console.log('Created clinic:', clinic.name)
+  if (!clinic) {
+    clinic = await prisma.clinic.create({
+      data: {
+        name: 'Headache & Migraine Center',
+        address: '100 Medical Plaza, San Francisco, CA',
+      },
+    })
+    console.log('Created clinic:', clinic.name)
+  } else {
+    console.log('Using existing clinic:', clinic.name)
+  }
 
-  // 2. Doctor user + profile
-  const doctorUser = await prisma.user.create({
-    data: {
-      email: 'dr.johnson@clinic.example.com',
-      passwordHash,
-      role: 'DOCTOR',
-    },
+  // 2. Doctor user + profile (idempotent)
+  const doctorEmail = 'dr.johnson@clinic.example.com'
+  let doctorUser = await prisma.user.findUnique({
+    where: { email: doctorEmail },
   })
-  const doctor = await prisma.doctorProfile.create({
-    data: {
-      userId: doctorUser.id,
-      name: 'Dr. Johnson',
-      specialization: 'Neurology / Migraine',
-      clinicId: clinic.id,
-    },
+  if (!doctorUser) {
+    doctorUser = await prisma.user.create({
+      data: {
+        email: doctorEmail,
+        passwordHash,
+        role: 'DOCTOR',
+        googleId: 'seed-dr.johnson@clinic.example.com',
+      },
+    })
+  }
+  let doctor = await prisma.doctorProfile.findUnique({
+    where: { userId: doctorUser.id },
   })
-  console.log('Created doctor:', doctor.name)
+  if (!doctor) {
+    doctor = await prisma.doctorProfile.create({
+      data: {
+        userId: doctorUser.id,
+        name: 'Dr. Johnson',
+        specialization: 'Neurology / Migraine',
+        clinicId: clinic.id,
+      },
+    })
+    console.log('Created doctor:', doctor.name)
+  } else {
+    console.log('Using existing doctor:', doctor.name)
+  }
 
   // 3. Patient users + profiles (previous mock data)
   const patientsData = [
@@ -92,40 +113,56 @@ async function main() {
 
   const patients: { userId: string; profileId: string }[] = []
   for (const p of patientsData) {
-    const user = await prisma.user.create({
-      data: {
-        email: p.email,
-        passwordHash,
-        role: 'PATIENT',
-      },
+    let user = await prisma.user.findUnique({
+      where: { email: p.email },
     })
-    const profile = await prisma.patientProfile.create({
-      data: {
-        userId: user.id,
-        name: p.name,
-        dob: yearsAgo(p.age),
-        gender: p.gender,
-        phone: p.phone,
-        address: p.address,
-        condition: p.condition,
-        email: p.email,
-      },
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: p.email,
+          passwordHash,
+          role: 'PATIENT',
+          googleId: `seed-${p.email}`,
+        },
+      })
+    }
+    let profile = await prisma.patientProfile.findUnique({
+      where: { userId: user.id },
     })
+    if (!profile) {
+      profile = await prisma.patientProfile.create({
+        data: {
+          userId: user.id,
+          name: p.name,
+          dob: yearsAgo(p.age),
+          gender: p.gender,
+          phone: p.phone,
+          address: p.address,
+          condition: p.condition,
+          email: p.email,
+        },
+      })
+    }
     patients.push({ userId: user.id, profileId: profile.id })
   }
-  console.log('Created', patients.length, 'patients')
+  console.log('Created or found', patients.length, 'patients')
 
-  // 4. Patient–doctor links (ACTIVE)
+  // 4. Patient–doctor links (ACTIVE) – idempotent
   for (const { profileId } of patients) {
-    await prisma.patientDoctorLink.create({
-      data: {
-        doctorId: doctor.id,
-        patientId: profileId,
-        linkStatus: 'ACTIVE',
-      },
+    const existing = await prisma.patientDoctorLink.findFirst({
+      where: { doctorId: doctor.id, patientId: profileId },
     })
+    if (!existing) {
+      await prisma.patientDoctorLink.create({
+        data: {
+          doctorId: doctor.id,
+          patientId: profileId,
+          linkStatus: 'ACTIVE',
+        },
+      })
+    }
   }
-  console.log('Created patient–doctor links')
+  console.log('Created or found patient–doctor links')
 
   const patient1Id = patients[0].profileId
 

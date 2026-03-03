@@ -179,7 +179,7 @@ model AIDiagnosticInsight {
   diagnosticProbability  Float?         // 
   riskAlertLevel         RiskAlertLevel // 
   keyContributors        String[]       // e.g., ["Weather", "Sleep", "Stress"]
-}
+} 
 
 // Doctor appointment with patient
 model Appointment {

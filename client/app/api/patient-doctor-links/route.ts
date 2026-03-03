@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { baseCrudHandler } from '../baseRoute/route'
 import { requireRole } from '@/lib/auth/middleware'
+import { getDoctorUserId } from '@/lib/auth/getDoctorUserId'
 import { prisma } from '@/lib/prisma'
 
 export async function GET(req: NextRequest) {
@@ -15,8 +16,12 @@ export async function GET(req: NextRequest) {
     const where: Record<string, unknown> = {}
 
     if (auth.user?.role === 'DOCTOR') {
+      const doctorUserId = await getDoctorUserId(auth.user!)
+      if (!doctorUserId) {
+        return NextResponse.json({ error: 'Doctor profile not found' }, { status: 404 })
+      }
       const doctorProfile = await prisma.doctorProfile.findUnique({
-        where: { userId: auth.user.userId },
+        where: { userId: doctorUserId },
       })
       if (!doctorProfile) {
         return NextResponse.json({ error: 'Doctor profile not found' }, { status: 404 })

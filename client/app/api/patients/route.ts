@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/middleware'
+import { getDoctorUserId } from '@/lib/auth/getDoctorUserId'
 import { prisma } from '@/lib/prisma'
+
+const DOCTOR_404 = { error: 'Doctor profile not found', message: 'Log in with a registered doctor account (e.g. dr.johnson@clinic.example.com / SeedPassword123!) to view patients.' } as const
 
 /** GET /api/patients – list patients linked to the current doctor (with computed list fields) */
 export async function GET(req: NextRequest) {
@@ -9,17 +12,23 @@ export async function GET(req: NextRequest) {
 
   if (auth.user?.role === 'DOCTOR') {
     try {
+      // Resolve to MongoDB User id (JWT may have "doctor-001" etc – never pass non-ObjectId to Prisma)
+      const doctorUserId = await getDoctorUserId(auth.user)
+      if (!doctorUserId) {
+        return NextResponse.json(DOCTOR_404, { status: 404 })
+      }
       const doctorProfile = await prisma.doctorProfile.findUnique({
-        where: { userId: auth.user.userId },
+        where: { userId: doctorUserId },
       })
       if (!doctorProfile) {
-        return NextResponse.json({ error: 'Doctor profile not found' }, { status: 404 })
+        return NextResponse.json(DOCTOR_404, { status: 404 })
       }
 
       const thirtyDaysAgo = new Date()
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
       const now = new Date()
 
+      // MongoDB-compatible query: no orderBy/take inside nested include
       const links = await prisma.patientDoctorLink.findMany({
         where: {
           doctorId: doctorProfile.id,
@@ -28,40 +37,32 @@ export async function GET(req: NextRequest) {
         include: {
           patient: {
             include: {
-              appointments: {
-                where: { doctorId: doctorProfile.id },
-                orderBy: { appointmentDate: 'desc' },
-                take: 5,
-              },
-              migraineEvents: {
-                where: { startDatetime: { gte: thirtyDaysAgo } },
-              },
-              medicationGroups: {
-                where: { doctorId: doctorProfile.id, isActive: true },
-                take: 5,
-              },
+              appointments: { where: { doctorId: doctorProfile.id } },
+              migraineEvents: { where: { startDatetime: { gte: thirtyDaysAgo } } },
+              medicationGroups: { where: { doctorId: doctorProfile.id, isActive: true } },
             },
           },
         },
       })
 
-      const patients = links.map((link: { patient: { id: string; name: string; dob: Date | null; gender: string | null; condition: string | null; phone: string | null; email: string | null; address: string | null; appointments?: Array<{ appointmentDate: Date; status: string }>; migraineEvents?: unknown[]; medicationGroups?: Array<{ adherenceRate: number | null; medications?: string[] }> } }) => {
+      const patients = links.map((link) => {
         const p = link.patient
-        const appointments = p.appointments || []
-        const nextAppt = appointments.find((a: { appointmentDate: Date; status: string }) => new Date(a.appointmentDate) >= now && a.status !== 'CANCELLED')
-        const lastAppt = appointments.find((a: { status: string }) => a.status === 'COMPLETED')
+        const appointments = [...(p.appointments || [])].sort(
+          (a, b) => new Date(b.appointmentDate).getTime() - new Date(a.appointmentDate).getTime()
+        )
+        const nextAppt = appointments.find((a) => new Date(a.appointmentDate) >= now && a.status !== 'CANCELLED')
+        const lastAppt = appointments.find((a) => a.status === 'COMPLETED')
         const recentEpisodes = p.migraineEvents?.length ?? 0
         const riskLevel =
           recentEpisodes > 6 ? 'high' : recentEpisodes > 3 ? 'medium' : 'low'
         const grps = p.medicationGroups ?? []
         const adherence =
-          grps.length && grps.some((g: { adherenceRate: number | null }) => g.adherenceRate != null)
+          grps.length && grps.some((g) => g.adherenceRate != null)
             ? Math.round(
-                grps.reduce((s: number, g: { adherenceRate: number | null }) => s + (g.adherenceRate ?? 0), 0) /
-                  grps.length
+                grps.reduce((s, g) => s + (g.adherenceRate ?? 0), 0) / grps.length
               )
             : null
-        const currentMeds = grps.flatMap((g: { medications?: string[] }) => g.medications ?? [])
+        const currentMeds = grps.flatMap((g) => g.medications ?? [])
         const age = p.dob ? Math.floor((now.getTime() - new Date(p.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null
 
         return {
@@ -86,8 +87,12 @@ export async function GET(req: NextRequest) {
 
       return NextResponse.json(patients)
     } catch (error) {
-      console.error('Database error:', error)
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+      console.error('GET /api/patients error:', error)
+      const message = error instanceof Error ? error.message : 'Internal server error'
+      return NextResponse.json(
+        { error: 'Internal server error', message },
+        { status: 500 }
+      )
     }
   }
 
