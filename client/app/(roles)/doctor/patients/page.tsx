@@ -34,6 +34,8 @@ import { AppointmentsTab } from '@/components/doctor/AppointmentsTab'
 import { NotesTab } from '@/components/doctor/NotesTab'
 import { ReportsTab } from '@/components/doctor/ReportsTab'
 import { CommunicationTab } from '@/components/doctor/CommunicationTab'
+import { ChatPanel } from '@/components/chat/ChatPanel'
+import { FloatingChatIcon } from '@/components/chat/FloatingChatIcon'
 
 export type PatientListItem = {
   id: string
@@ -86,6 +88,7 @@ export default function PatientsPage() {
   } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -477,37 +480,6 @@ export default function PatientsPage() {
                 </Card>
               </div>
 
-              {/* Next Steps */}
-              <div className="grid grid-cols-1 gap-4 sm:gap-6">
-                <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
-                  <CardContent className="p-4 sm:p-6">
-                    <h3 className="text-base sm:text-lg font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-                      <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600" />
-                      Next Steps
-                    </h3>
-                    <div className="space-y-2 sm:space-y-3">
-                      <div className={`p-3 sm:p-4 rounded-lg border-2 ${
-                        !selectedPatient.nextAppointment || new Date(selectedPatient.nextAppointment) < new Date()
-                          ? 'border-red-200 bg-red-50'
-                          : 'border-green-200 bg-green-50'
-                      }`}>
-                        <p className="text-xs font-semibold text-gray-600 uppercase mb-1">Upcoming</p>
-                        <p className="font-bold text-gray-800 text-sm sm:text-base">{selectedPatient.nextAppointment ?? '—'}</p>
-                        <p className="text-xs text-gray-500 mt-1">📅 Appointment scheduled</p>
-                      </div>
-                      <Button className="w-full rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold text-xs sm:text-sm">
-                        <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-                        Send Message
-                      </Button>
-                      <Button variant="outline" className="w-full rounded-lg text-xs sm:text-sm">
-                        <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-                        Add Note
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
               {/* Detailed Tabs */}
               <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
                 <CardContent className="p-4 sm:p-6">
@@ -590,6 +562,21 @@ export default function PatientsPage() {
           )}
         </div>
       </div>
+
+      {selectedPatient && (
+        <FloatingChatIcon
+          onClick={() => setChatOpen(true)}
+          aria-label={`Chat with ${selectedPatient.name}`}
+        />
+      )}
+
+      <ChatPanel
+        patientId={selectedPatient?.id}
+        otherPartyName={selectedPatient?.name ?? 'Patient'}
+        currentUserRole="DOCTOR"
+        open={chatOpen && !!selectedPatient}
+        onClose={() => setChatOpen(false)}
+      />
     </div>
     </div>
   )
