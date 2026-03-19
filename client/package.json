@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "prepare": "husky || true"
+    "prepare": "node -e \"if(!process.env.CI){require('child_process').spawnSync('husky',{stdio:'inherit',shell:true})}\""
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
