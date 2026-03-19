@@ -2,14 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/middleware'
 import { getDoctorUserId } from '@/lib/auth/getDoctorUserId'
 import { getPatientUserId } from '@/lib/auth/getPatientUserId'
+import type { JWTPayload } from '@/lib/auth/jwt'
 import { prisma } from '@/lib/prisma'
 
 async function getConversationAccess(
   conversationId: string,
-  user: { role: string; userId?: string; email?: string }
+  user: JWTPayload
 ): Promise<{ conversation: { id: string; doctorId: string; patientId: string } | null; error?: NextResponse }> {
   if (user.role === 'DOCTOR' || user.role === 'ADMIN') {
-    const doctorUserId = await getDoctorUserId(user as { userId: string; email: string; role: string })
+    const doctorUserId = await getDoctorUserId(user)
     if (!doctorUserId) return { conversation: null, error: NextResponse.json({ error: 'Doctor profile not found' }, { status: 404 }) }
     const doctorProfile = await prisma.doctorProfile.findUnique({ where: { userId: doctorUserId } })
     if (!doctorProfile) return { conversation: null, error: NextResponse.json({ error: 'Doctor profile not found' }, { status: 404 }) }
@@ -19,7 +20,7 @@ async function getConversationAccess(
     return { conversation }
   }
   if (user.role === 'PATIENT') {
-    const patientUserId = await getPatientUserId(user as { userId: string; email: string; role: string })
+    const patientUserId = await getPatientUserId(user)
     if (!patientUserId) return { conversation: null, error: NextResponse.json({ error: 'Patient profile not found' }, { status: 404 }) }
     const patientProfile = await prisma.patientProfile.findUnique({ where: { userId: patientUserId } })
     if (!patientProfile) return { conversation: null, error: NextResponse.json({ error: 'Patient profile not found' }, { status: 404 }) }
