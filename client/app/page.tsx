@@ -32,8 +32,8 @@ export default function Home() {
             <Link href="#features" className="text-[#4b5563] hover:text-[#7ad7d7] transition-colors">Features</Link>
             <Link href="#how" className="text-[#4b5563] hover:text-[#7ad7d7] transition-colors">How It Works</Link>
             <Link href="#testimonials" className="text-[#4b5563] hover:text-[#7ad7d7] transition-colors">Reviews</Link>
-            <Link href="#download" className="bg-linear-to-r from-[#b3c6fc] to-[#7ad7d7] text-white px-6 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all">
-              Get Started
+            <Link href="/signin" className="bg-linear-to-r from-[#b3c6fc] to-[#7ad7d7] text-white px-6 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all">
+              Sign In
             </Link>
           </div>
         </div>
