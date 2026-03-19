@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { signToken, setAuthCookie } from '@/lib/auth/jwt';
 import { comparePassword } from '@/lib/auth/password';
-import { prisma } from '@/lib/prisma';
+
+async function getPrismaSafe() {
+  if (!process.env.DATABASE_URL) {
+    return null;
+  }
+
+  try {
+    const { prisma } = await import('@/lib/prisma');
+    return prisma;
+  } catch (error) {
+    console.error('Prisma initialization failed:', error);
+    return null;
+  }
+}
 
 // Hardcoded test users for development (used when not in DB)
 const HARDCODED_USERS = {
@@ -48,14 +61,17 @@ export async function POST(request: NextRequest) {
       let name = hardcoded.name;
       let useEmail = hardcoded.email;
       if (hardcoded.role === 'DOCTOR') {
-        const seedDoctor = await prisma.user.findUnique({
-          where: { email: 'dr.johnson@clinic.example.com' },
-          include: { doctorProfile: true },
-        });
-        if (seedDoctor?.doctorProfile) {
-          userId = seedDoctor.id;
-          name = seedDoctor.doctorProfile.name;
-          useEmail = seedDoctor.email;
+        const prisma = await getPrismaSafe();
+        if (prisma) {
+          const seedDoctor = await prisma.user.findUnique({
+            where: { email: 'dr.johnson@clinic.example.com' },
+            include: { doctorProfile: true },
+          });
+          if (seedDoctor?.doctorProfile) {
+            userId = seedDoctor.id;
+            name = seedDoctor.doctorProfile.name;
+            useEmail = seedDoctor.email;
+          }
         }
       }
       const token = await signToken({
@@ -81,13 +97,16 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Try database users (e.g. seed doctor: dr.johnson@clinic.example.com / SeedPassword123!)
-    const dbUser = await prisma.user.findUnique({
-      where: { email },
-      include: {
-        doctorProfile: true,
-        patientProfile: true,
-      },
-    });
+    const prisma = await getPrismaSafe();
+    const dbUser = prisma
+      ? await prisma.user.findUnique({
+          where: { email },
+          include: {
+            doctorProfile: true,
+            patientProfile: true,
+          },
+        })
+      : null;
     if (dbUser && await comparePassword(password, dbUser.passwordHash)) {
       const name =
         dbUser.doctorProfile?.name ??
