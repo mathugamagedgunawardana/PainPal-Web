@@ -63,7 +63,7 @@ The main objective is to support migraine-related tracking and clinical workflow
 
 ### Patient
 - Log migraine events and symptom details.
-- Track personal attack history and medication logs.
+- Track personal attack history and medication logs. 
 - Receive generated summaries and model-supported outputs.
 
 ---
