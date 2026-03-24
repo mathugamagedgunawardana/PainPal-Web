@@ -231,7 +231,7 @@ export default function PatientAnalyticsPredictionPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        {/* <div className="bg-white rounded-lg border border-gray-200 p-5">
           <div className="flex items-center gap-2 mb-3">
             <AlertCircle className="w-5 h-5 text-amber-600" />
             <h3 className="text-lg font-semibold text-gray-900">Category Effects By Migraine Type</h3>
@@ -275,7 +275,7 @@ export default function PatientAnalyticsPredictionPage() {
               );
             })}
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   );
