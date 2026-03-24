@@ -107,27 +107,27 @@ function formatDate(d: Date): string {
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ['ADMIN'])
   if (!auth.authorized) return auth.response!
-  const { baseCrudHandler } = await import('../baseRoute/route')
+  const { baseCrudHandler } = await import('../baseRoute/baseCrud')
   return baseCrudHandler('patientProfile', req)
 }
 
 export async function PUT(req: NextRequest) {
   const auth = await requireRole(req, ['ADMIN', 'PATIENT'])
   if (!auth.authorized) return auth.response!
-  const { baseCrudHandler } = await import('../baseRoute/route')
+  const { baseCrudHandler } = await import('../baseRoute/baseCrud')
   return baseCrudHandler('patientProfile', req)
 }
 
 export async function PATCH(req: NextRequest) {
   const auth = await requireRole(req, ['ADMIN', 'PATIENT'])
   if (!auth.authorized) return auth.response!
-  const { baseCrudHandler } = await import('../baseRoute/route')
+  const { baseCrudHandler } = await import('../baseRoute/baseCrud')
   return baseCrudHandler('patientProfile', req)
 }
 
 export async function DELETE(req: NextRequest) {
   const auth = await requireRole(req, ['ADMIN'])
   if (!auth.authorized) return auth.response!
-  const { baseCrudHandler } = await import('../baseRoute/route')
+  const { baseCrudHandler } = await import('../baseRoute/baseCrud')
   return baseCrudHandler('patientProfile', req)
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { baseCrudHandler } from '../baseRoute/route'
+import { baseCrudHandler } from '../baseRoute/baseCrud'
 import { requireRole } from '@/lib/auth/middleware'
 import { getDoctorUserId } from '@/lib/auth/getDoctorUserId'
 import { prisma } from '@/lib/prisma'
