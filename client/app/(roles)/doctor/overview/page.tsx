@@ -132,7 +132,7 @@ export default function DoctorDashboard() {
   // Prevent hydration mismatch
   if (!isMounted) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50 p-6">
+      <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50 p-3 sm:p-4 md:p-6">
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
@@ -163,7 +163,7 @@ export default function DoctorDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50 p-6">
+    <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50 p-3 sm:p-4 md:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Header */}

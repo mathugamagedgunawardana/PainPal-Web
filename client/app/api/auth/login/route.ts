@@ -1,7 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { signToken, setAuthCookie } from '@/lib/auth/jwt';
+import { comparePassword } from '@/lib/auth/password';
 
-// Hardcoded test users for development
+async function getPrismaSafe() {
+  if (!process.env.DATABASE_URL) {
+    return null;
+  }
+
+  try {
+    const { prisma } = await import('@/lib/prisma');
+    return prisma;
+  } catch (error) {
+    console.error('Prisma initialization failed:', error);
+    return null;
+  }
+}
+
+// Hardcoded test users for development (used when not in DB)
 const HARDCODED_USERS = {
   doctor: {
     userId: 'doctor-001',
@@ -39,47 +54,89 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find hardcoded user by email
-    const user = Object.values(HARDCODED_USERS).find(u => u.email === email);
-
-    if (!user) {
+    // 1. Try hardcoded users (development). For DOCTOR, use seed doctor's DB id so /api/patients works.
+    const hardcoded = Object.values(HARDCODED_USERS).find(u => u.email === email);
+    if (hardcoded && hardcoded.password === password) {
+      let userId = hardcoded.userId;
+      let name = hardcoded.name;
+      let useEmail = hardcoded.email;
+      if (hardcoded.role === 'DOCTOR') {
+        const prisma = await getPrismaSafe();
+        if (prisma) {
+          const seedDoctor = await prisma.user.findUnique({
+            where: { email: 'dr.johnson@clinic.example.com' },
+            include: { doctorProfile: true },
+          });
+          if (seedDoctor?.doctorProfile) {
+            userId = seedDoctor.id;
+            name = seedDoctor.doctorProfile.name;
+            useEmail = seedDoctor.email;
+          }
+        }
+      }
+      const token = await signToken({
+        userId,
+        email: useEmail,
+        role: hardcoded.role,
+        name,
+      });
+      await setAuthCookie(token);
       return NextResponse.json(
-        { error: 'Invalid credentials', message: 'Email or password is incorrect' },
-        { status: 401 }
+        {
+          message: 'Login successful',
+          token,
+          user: {
+            id: userId,
+            email: useEmail,
+            role: hardcoded.role,
+            name,
+          },
+        },
+        { status: 200 }
       );
     }
 
-    // Simple password check (hardcoded for development)
-    if (user.password !== password) {
+    // 2. Try database users (e.g. seed doctor: dr.johnson@clinic.example.com / SeedPassword123!)
+    const prisma = await getPrismaSafe();
+    const dbUser = prisma
+      ? await prisma.user.findUnique({
+          where: { email },
+          include: {
+            doctorProfile: true,
+            patientProfile: true,
+          },
+        })
+      : null;
+    if (dbUser && await comparePassword(password, dbUser.passwordHash)) {
+      const name =
+        dbUser.doctorProfile?.name ??
+        dbUser.patientProfile?.name ??
+        email.split('@')[0];
+      const token = await signToken({
+        userId: dbUser.id,
+        email: dbUser.email,
+        role: dbUser.role,
+        name,
+      });
+      await setAuthCookie(token);
       return NextResponse.json(
-        { error: 'Invalid credentials', message: 'Email or password is incorrect' },
-        { status: 401 }
+        {
+          message: 'Login successful',
+          token,
+          user: {
+            id: dbUser.id,
+            email: dbUser.email,
+            role: dbUser.role,
+            name,
+          },
+        },
+        { status: 200 }
       );
     }
-
-    // Generate JWT token
-    const token = await signToken({
-      userId: user.userId,
-      email: user.email,
-      role: user.role,
-      name: user.name,
-    });
-
-    // Set auth cookie
-    await setAuthCookie(token);
 
     return NextResponse.json(
-      {
-        message: 'Login successful',
-        token,
-        user: {
-          id: user.userId,
-          email: user.email,
-          role: user.role,
-          name: user.name,
-        },
-      },
-      { status: 200 }
+      { error: 'Invalid credentials', message: 'Email or password is incorrect' },
+      { status: 401 }
     );
   } catch (error) {
     console.error('Login error:', error);

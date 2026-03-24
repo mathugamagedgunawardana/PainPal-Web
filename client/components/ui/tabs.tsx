@@ -26,7 +26,7 @@ export function Tabs({ children, className, defaultValue = '', ...props }: TabsP
 
 export function TabsList({ children, className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn("flex gap-2 p-1 bg-(--color-soft-blue) rounded-lg", className)} {...props}>
+    <div className={cn("flex gap-2 p-1 bg-gray-100 rounded-lg", className)} {...props}>
       {children}
     </div>
   )
@@ -44,8 +44,8 @@ export function TabsTrigger({ children, className, value, ...props }: TabsTrigge
       className={cn(
         "px-4 py-2 rounded-lg font-medium transition",
         activeTab === value 
-          ? "bg-(--color-mint) text-white" 
-          : "text-(--color-blue) hover:bg-(--color-mint)/10",
+          ? "bg-blue-600 text-white shadow-sm" 
+          : "text-gray-700 hover:bg-gray-200",
         className
       )} 
       onClick={() => setActiveTab(value)}

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Home,
   Users,
+  UserCog,
   Calendar,
   Settings,
   Bell,
@@ -44,6 +45,7 @@ const navigationByRole = {
   ],
   patient: [
     { icon: Home, label: 'Overview', id: 'overview', href: '/patient/overview' },
+    { icon: Activity, label: 'Analytics', id: 'analytics', href: '/patient/analytics' },
     { icon: HeartPulse, label: 'My Episodes', id: 'episodes', href: '/patient/episodes' },
     { icon: FileText, label: 'My Treatments', id: 'treatments', href: '/patient/treatments' },
     { icon: Calendar, label: 'Appointments', id: 'appointments', href: '/patient/appointments' },
@@ -54,6 +56,7 @@ const navigationByRole = {
   ],
   admin: [
     { icon: Home, label: 'Dashboard', id: 'dashboard', href: '/admin/dashboard' },
+    { icon: UserCog, label: 'Users', id: 'users', href: '/admin/users' },
     { icon: Stethoscope, label: 'Doctors', id: 'doctors', href: '/admin/doctors' },
     { icon: Users, label: 'Patients', id: 'patients', href: '/admin/patients' },
     { icon: Activity, label: 'Analytics', id: 'analytics', href: '/admin/analytics' },

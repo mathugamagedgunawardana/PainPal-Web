@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { baseCrudHandler } from '../baseRoute/route';
+import { baseCrudHandler } from '../baseRoute/baseCrud';
 import { requireRole } from '@/lib/auth/middleware';
 
 export async function GET(req: NextRequest) {

@@ -32,8 +32,8 @@ export default function Home() {
             <Link href="#features" className="text-[#4b5563] hover:text-[#7ad7d7] transition-colors">Features</Link>
             <Link href="#how" className="text-[#4b5563] hover:text-[#7ad7d7] transition-colors">How It Works</Link>
             <Link href="#testimonials" className="text-[#4b5563] hover:text-[#7ad7d7] transition-colors">Reviews</Link>
-            <Link href="#download" className="bg-linear-to-r from-[#b3c6fc] to-[#7ad7d7] text-white px-6 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all">
-              Get Started
+            <Link href="/signin" className="bg-linear-to-r from-[#b3c6fc] to-[#7ad7d7] text-white px-6 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all">
+              Sign In
             </Link>
           </div>
         </div>
@@ -89,8 +89,15 @@ export default function Home() {
                 <div className="absolute -top-10 -left-10 w-72 h-72 bg-[#b3c6fc]/20 rounded-full blur-3xl" />
                 <div className="absolute -bottom-10 -right-10 w-96 h-96 bg-[#7ad7d7]/20 rounded-full blur-3xl" />
                 <div className="relative bg-white/60 backdrop-blur-xl rounded-[3rem] shadow-2xl border border-white/20 p-8 overflow-hidden">
-                  <div className="aspect-square w-full bg-linear-to-br from-[#e6e6fa] to-[#d0f0f0] rounded-3xl flex items-center justify-center">
-                    <Brain className="w-48 h-48 text-[#7ad7d7]/30" />
+                  <div className="relative aspect-square w-full rounded-3xl overflow-hidden">
+                    <Image
+                      src="https://images.unsplash.com/photo-1511174511562-5f7f18b874f8?auto=format&fit=crop&w=900&q=80"
+                      alt="Person using a mobile health app"
+                      fill
+                      sizes="(min-width: 1024px) 520px, 80vw"
+                      className="object-cover"
+                      priority
+                    />
                   </div>
                   {/* Floating Elements */}
                   <div className="absolute top-10 right-10 bg-white rounded-2xl shadow-xl p-4 border border-gray-100">
@@ -263,8 +270,14 @@ export default function Home() {
               </div>
               <p className="text-[#4b5563] text-lg mb-6 leading-relaxed">"This app completely changed how I manage my migraines. The AI predictions are incredibly accurate and have helped me prevent so many episodes."</p>
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-linear-to-br from-[#b3c6fc] to-[#7ad7d7] rounded-full flex items-center justify-center text-white font-bold text-xl shadow-lg">
-                  SC
+                <div className="relative w-14 h-14 rounded-full overflow-hidden shadow-lg">
+                  <Image
+                    src="https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=160&q=80"
+                    alt="Sarah Chen"
+                    fill
+                    sizes="56px"
+                    className="object-cover"
+                  />
                 </div>
                 <div>
                   <div className="font-bold text-[#1a202c]">Sarah Chen</div>
@@ -279,8 +292,14 @@ export default function Home() {
               </div>
               <p className="text-[#4b5563] text-lg mb-6 leading-relaxed">"The medication reminders and lifestyle insights are game-changers. I finally feel in control of my health and can live without constant worry."</p>
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-linear-to-br from-[#7ad7d7] to-[#60c5c5] rounded-full flex items-center justify-center text-white font-bold text-xl shadow-lg">
-                  MJ
+                <div className="relative w-14 h-14 rounded-full overflow-hidden shadow-lg">
+                  <Image
+                    src="https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=160&q=80"
+                    alt="Michael Johnson"
+                    fill
+                    sizes="56px"
+                    className="object-cover"
+                  />
                 </div>
                 <div>
                   <div className="font-bold text-[#1a202c]">Michael Johnson</div>
@@ -295,8 +314,14 @@ export default function Home() {
               </div>
               <p className="text-[#4b5563] text-lg mb-6 leading-relaxed">"Beautiful, intuitive design paired with powerful features. Best migraine tracking app I've tried. My doctor loves the detailed reports!"</p>
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-linear-to-br from-[#b3c6fc] to-[#9bb5fc] rounded-full flex items-center justify-center text-white font-bold text-xl shadow-lg">
-                  ES
+                <div className="relative w-14 h-14 rounded-full overflow-hidden shadow-lg">
+                  <Image
+                    src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=160&q=80"
+                    alt="Emma Silva"
+                    fill
+                    sizes="56px"
+                    className="object-cover"
+                  />
                 </div>
                 <div>
                   <div className="font-bold text-[#1a202c]">Emma Silva</div>
@@ -327,22 +352,40 @@ export default function Home() {
           <div className="flex flex-wrap justify-center items-end gap-6 relative">
             <div className="relative w-[200px] md:w-60">
               <div className="bg-white rounded-[2.5rem] shadow-2xl border-8 border-gray-900 overflow-hidden transform hover:scale-105 transition-all duration-300 -rotate-6">
-                <div className="aspect-9/19 bg-linear-to-br from-[#e6e6fa] to-[#d0f0f0] flex items-center justify-center">
-                  <Brain className="w-20 h-20 text-[#7ad7d7]/40" />
+                <div className="relative aspect-9/19 overflow-hidden">
+                  <Image
+                    src="https://images.unsplash.com/photo-1551650975-87deedd944c3?auto=format&fit=crop&w=600&q=80"
+                    alt="App dashboard preview"
+                    fill
+                    sizes="(min-width: 768px) 240px, 50vw"
+                    className="object-cover"
+                  />
                 </div>
               </div>
             </div>
             <div className="relative w-[220px] md:w-[260px] z-10">
               <div className="bg-white rounded-[2.5rem] shadow-2xl border-8 border-gray-900 overflow-hidden transform hover:scale-105 transition-all duration-300">
-                <div className="aspect-9/19 bg-linear-to-br from-[#f8f9ff] to-[#e6e6fa] flex items-center justify-center">
-                  <Activity className="w-24 h-24 text-[#b3c6fc]/40" />
+                <div className="relative aspect-9/19 overflow-hidden">
+                  <Image
+                    src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=650&q=80"
+                    alt="Health insights screen"
+                    fill
+                    sizes="(min-width: 768px) 260px, 55vw"
+                    className="object-cover"
+                  />
                 </div>
               </div>
             </div>
             <div className="relative w-[200px] md:w-60">
               <div className="bg-white rounded-[2.5rem] shadow-2xl border-8 border-gray-900 overflow-hidden transform hover:scale-105 transition-all duration-300 rotate-6">
-                <div className="aspect-9/19 bg-linear-to-br from-[#d0f0f0] to-[#e6e6fa] flex items-center justify-center">
-                  <HeartPulse className="w-20 h-20 text-[#7ad7d7]/40" />
+                <div className="relative aspect-9/19 overflow-hidden">
+                  <Image
+                    src="https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=600&q=80"
+                    alt="Medication reminders screen"
+                    fill
+                    sizes="(min-width: 768px) 240px, 50vw"
+                    className="object-cover"
+                  />
                 </div>
               </div>
             </div>

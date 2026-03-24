@@ -50,6 +50,7 @@ model DoctorProfile {
   appointments    Appointment[]
   clinicalNotes   ClinicalNote[]
   communications  Communication[]
+  conversations   Conversation[]
 }
 
 model Clinic {
@@ -86,6 +87,7 @@ model PatientProfile {
   appointments    Appointment[]
   clinicalNotes   ClinicalNote[]
   communications  Communication[]
+  conversations   Conversation[]
 }
 
 // ----------------------------------------------
@@ -179,7 +181,7 @@ model AIDiagnosticInsight {
   diagnosticProbability  Float?         // 
   riskAlertLevel         RiskAlertLevel // 
   keyContributors        String[]       // e.g., ["Weather", "Sleep", "Stress"]
-}
+} 
 
 // Doctor appointment with patient
 model Appointment {
@@ -224,6 +226,35 @@ model Communication {
   message          String
   channel          String          // e.g., "SMS", "Email", "In-App"
   createdAt        DateTime        @default(now())
+}
+
+// ----------------------------------------------
+// CHAT (Doctor–Patient messaging)
+// ----------------------------------------------
+
+model Conversation {
+  id        String        @id @default(auto()) @map("_id") @db.ObjectId
+  doctorId  String        @db.ObjectId
+  doctor    DoctorProfile @relation(fields: [doctorId], references: [id])
+  patientId String        @db.ObjectId
+  patient   PatientProfile @relation(fields: [patientId], references: [id])
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  messages  ChatMessage[]
+
+  @@unique([doctorId, patientId])
+}
+
+model ChatMessage {
+  id             String             @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String             @db.ObjectId
+  conversation   Conversation       @relation(fields: [conversationId], references: [id])
+  senderRole     ChatSenderRole     // DOCTOR or PATIENT
+  senderUserId   String             @db.ObjectId // User.id for audit
+  content        String
+  createdAt      DateTime           @default(now())
+  readAt         DateTime?          // When the other party read it (optional)
 }
 
 // Medication Group - Protocol of multiple medications prescribed together
@@ -295,4 +326,9 @@ enum MedicationEffectiveness {
   LOW
   MODERATE
   HIGH
+}
+
+enum ChatSenderRole {
+  DOCTOR
+  PATIENT
 }

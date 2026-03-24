@@ -1,30 +1,23 @@
 import React from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Activity, Clock, Pill, TrendingUp } from 'lucide-react'
+import { Activity, Clock, Pill, TrendingUp, AlertCircle, FileText } from 'lucide-react'
 
 interface Episode {
   date: string
   severity: string
   duration: string
   triggers: string[]
-  medicationGroupId: number
-  medicationGroupName: string
-  effectiveness: 'high' | 'moderate' | 'low'
-}
-
-interface MedicationGroup {
-  id: number
-  name: string
-  medications: string[]
+  mostIntenseSymptoms: string[]
+  medicationsTakenDuringPeriod: string[]
+  notes?: string
 }
 
 interface EpisodeHistoryTabProps {
   episodeHistory: Episode[]
-  medicationGroups: MedicationGroup[]
 }
 
-export function EpisodeHistoryTab({ episodeHistory, medicationGroups }: EpisodeHistoryTabProps) {
+export function EpisodeHistoryTab({ episodeHistory }: EpisodeHistoryTabProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -32,10 +25,10 @@ export function EpisodeHistoryTab({ episodeHistory, medicationGroups }: EpisodeH
           <Activity className="w-5 h-5 text-blue-600" />
           Migraine Episode Timeline
         </h3>
-        <Button variant="default" size="sm" className="rounded-xl bg-blue-600 hover:bg-blue-700">
+{/*         <Button variant="default" size="sm" className="rounded-xl bg-blue-600 hover:bg-blue-700">
           <TrendingUp className="w-4 h-4 mr-2" />
           View Chart
-        </Button>
+        </Button> */}
       </div>
       {episodeHistory.map((episode, idx) => (
         <div key={idx} className="flex items-start gap-4 p-4 sm:p-5 rounded-xl border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all">
@@ -52,81 +45,47 @@ export function EpisodeHistoryTab({ episodeHistory, medicationGroups }: EpisodeH
                   {episode.severity}
                 </Badge>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge className={`text-xs ${
-                  episode.effectiveness === 'high' ? 'bg-green-100 text-green-700 border-green-300' :
-                  episode.effectiveness === 'moderate' ? 'bg-yellow-100 text-yellow-700 border-yellow-300' :
-                  'bg-red-100 text-red-700 border-red-300'
-                } border`}>
-                  {episode.effectiveness === 'high' ? '✓ Effective' : 
-                   episode.effectiveness === 'moderate' ? '⚡ Moderate' : 
-                   '✗ Low Effect'}
-                </Badge>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 gap-3 mb-3">
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Clock className="w-4 h-4 text-gray-400" />
                 <span>Duration: {episode.duration}</span>
               </div>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <Pill className={`w-4 h-4 ${
-                    episode.effectiveness === 'high' ? 'text-green-600' :
-                    episode.effectiveness === 'moderate' ? 'text-yellow-600' :
-                    'text-red-600'
-                  }`} />
-                  <span className="text-xs font-semibold text-gray-500 uppercase">Medication Group</span>
-                </div>
-                <div className="p-2 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200">
-                  <p className="font-bold text-indigo-800 text-sm">{episode.medicationGroupName}</p>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {medicationGroups.find(g => g.id === episode.medicationGroupId)?.medications.map((med, i) => (
-                      <Badge key={i} className="text-xs bg-indigo-100 text-indigo-700">
-                        {med}
-                      </Badge>
-                    ))}
-                  </div>
+            </div>
+
+            {/* Most intense symptoms */}
+            <div className="mb-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase mb-2 flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
+                Most intense symptoms
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {episode.mostIntenseSymptoms.map((symptom, i) => (
+                  <Badge key={i} variant="secondary" className="text-xs bg-amber-100 text-amber-800 border border-amber-200">
+                    {symptom}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            {/* Doctor-prescribed medications during this period */}
+            <div className="mb-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase mb-2 flex items-center gap-1.5">
+                <Pill className="w-3.5 h-3.5 text-indigo-600" />
+                Medications taken during this period (doctor-prescribed)
+              </p>
+              <div className="p-2.5 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200">
+                <div className="flex flex-wrap gap-1.5">
+                  {episode.medicationsTakenDuringPeriod.map((med, i) => (
+                    <Badge key={i} className="text-xs bg-indigo-100 text-indigo-700 border-indigo-200">
+                      {med}
+                    </Badge>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Medication Effectiveness Indicator */}
-            <div className={`p-3 rounded-lg mb-3 border ${
-              episode.effectiveness === 'high' ? 'bg-green-50 border-green-200' :
-              episode.effectiveness === 'moderate' ? 'bg-yellow-50 border-yellow-200' :
-              'bg-red-50 border-red-200'
-            }`}>
-              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-                <span className="text-xs font-semibold text-gray-600 uppercase">Medication Effectiveness</span>
-                <span className={`text-xs font-bold ${
-                  episode.effectiveness === 'high' ? 'text-green-700' :
-                  episode.effectiveness === 'moderate' ? 'text-yellow-700' :
-                  'text-red-700'
-                }`}>
-                  {episode.effectiveness === 'high' ? 'High Response' : 
-                   episode.effectiveness === 'moderate' ? 'Moderate Response' : 
-                   'Poor Response'}
-                </span>
-              </div>
-              <div className="w-full bg-white rounded-full h-2 overflow-hidden">
-                <div
-                  className={`h-2 rounded-full transition-all duration-500 ${
-                    episode.effectiveness === 'high' ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
-                    episode.effectiveness === 'moderate' ? 'bg-gradient-to-r from-yellow-500 to-amber-500' :
-                    'bg-gradient-to-r from-red-500 to-rose-500'
-                  }`}
-                  style={{ 
-                    width: episode.effectiveness === 'high' ? '90%' : 
-                           episode.effectiveness === 'moderate' ? '60%' : '30%' 
-                  }}
-                />
-              </div>
-            </div>
-            
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Reported Triggers</p>
+            {/* Reported triggers */}
+            <div className="mb-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Reported triggers</p>
               <div className="flex gap-2 flex-wrap">
                 {episode.triggers.map((trigger, i) => (
                   <Badge key={i} variant="secondary" className="text-xs bg-blue-100 text-blue-700">
@@ -135,6 +94,19 @@ export function EpisodeHistoryTab({ episodeHistory, medicationGroups }: EpisodeH
                 ))}
               </div>
             </div>
+
+            {/* Optional notes */}
+            {episode.notes && (
+              <div className="pt-2 border-t border-gray-200">
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-1.5 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-gray-500" />
+                  Notes
+                </p>
+                <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-2 border border-gray-100">
+                  {episode.notes}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       ))}
