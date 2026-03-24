@@ -11,6 +11,13 @@ from pathlib import Path
 DEFAULT_CLASSES = ["migraine", "glioma", "meningioma", "pituitary", "no_tumor"]
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
 
+# Folder names that count as TUMOR (all others = non_tumor) for binary classification
+TUMOR_FOLDER_NAMES = {
+    "glioma", "glioma_1", "glioma_2", "glioma_3", "glioma_unknown",
+    "meningioma", "pituitary",
+}
+BINARY_CLASS_NAMES = ["non_tumor", "tumor"]  # label 0 = non_tumor, 1 = tumor
+
 
 def get_class_folders(data_dir: str):
     """Return sorted list of subdirs in data_dir that contain images (each = one class)."""
@@ -51,3 +58,19 @@ def count_images(data_dir: str):
     total = sum(len(p) for p in by_class.values())
     counts = {k: len(v) for k, v in by_class.items()}
     return total, counts
+
+
+def list_binary_image_paths(data_dir: str, tumor_folder_names=None):
+    """
+    Return list of (image_path, binary_label) for tumor vs non_tumor.
+    binary_label: 0 = non_tumor, 1 = tumor.
+    Folder names in tumor_folder_names (default TUMOR_FOLDER_NAMES) -> 1, else -> 0.
+    """
+    tumor_folder_names = tumor_folder_names or TUMOR_FOLDER_NAMES
+    by_class = list_image_paths_by_class(data_dir)
+    pairs = []
+    for folder_name, paths in by_class.items():
+        label = 1 if folder_name in tumor_folder_names else 0
+        for p in paths:
+            pairs.append((p, label))
+    return pairs

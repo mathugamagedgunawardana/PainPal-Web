@@ -1,5 +1,5 @@
 """
-Load trained ResNet and predict: Migraine vs tumor type (glioma, meningioma, pituitary, no_tumor).
+Load trained ResNet and predict: tumor vs non_tumor (binary).
 """
 import os
 import sys
@@ -22,15 +22,22 @@ def get_transform(transforms_config):
     ])
 
 
-def predict_image(image_path, model, transform, device, class_names):
-    """Predict class for one image path."""
+def predict_image(image_path, model, transform, device, class_names, tumor_confidence_threshold=0.7):
+    """
+    Predict tumor vs non_tumor. If P(tumor) < threshold, return non_tumor
+    so that other / out-of-distribution images are classified as non_tumor.
+    """
     img = Image.open(image_path).convert("RGB")
     x = transform(img).unsqueeze(0).to(device)
     with torch.no_grad():
         logits = model(x)
-        probs = torch.softmax(logits, dim=1)
-        pred_idx = logits.argmax(dim=1).item()
-    return class_names[pred_idx], probs[0].cpu().tolist()
+        probs = torch.softmax(logits, dim=1)[0].cpu().tolist()
+    prob_dict = dict(zip(class_names, probs))
+    tumor_idx = class_names.index("tumor") if "tumor" in class_names else None
+    if tumor_idx is not None and prob_dict.get("tumor", 0.0) < tumor_confidence_threshold:
+        return "non_tumor", probs
+    pred_idx = max(range(len(class_names)), key=lambda i: probs[i])
+    return class_names[pred_idx], probs
 
 
 def main():
@@ -48,12 +55,16 @@ def main():
         print("File not found:", image_path)
         return
 
-    pred_label, probs = predict_image(image_path, model, transform, device, class_names)
+    threshold = transforms_config.get("tumor_confidence_threshold", 0.7)
+    pred_label, probs = predict_image(
+        image_path, model, transform, device, class_names,
+        tumor_confidence_threshold=threshold,
+    )
     print("Predicted:", pred_label)
-    if pred_label.lower() == "migraine":
-        print("  -> Patient is classified as Migraine.")
+    if pred_label == "non_tumor":
+        print("  -> Classified as non_tumor (no tumor / other image).")
     else:
-        print(f"  -> Not migraine. Tumor/condition: {pred_label}.")
+        print("  -> Classified as tumor.")
     print("Probabilities:", dict(zip(class_names, [round(p, 4) for p in probs])))
 
 
