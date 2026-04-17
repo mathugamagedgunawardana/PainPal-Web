@@ -9,6 +9,7 @@ Supports:
 
 import os
 import glob
+import json
 import pandas as pd
 import numpy as np
 import xgboost as xgb
@@ -38,11 +39,216 @@ TEST_SIZE = 0.2
 STRATIFY_BY_PATIENT = True
 # Use GPU for XGBoost if available (set to "cpu" to force CPU)
 USE_GPU = True
+SYMPTOMS_PATH = "sysmptoms.txt"
+ANALYTICS_EXPORT_PATH = os.path.normpath(
+    os.path.join("..", "..", "client", "public", "model", "patient_analytics_prediction.json")
+)
+
+TYPE_CANONICAL_MAP = {
+    "Migraine without aura": "Migraine_without_aura",
+    "Typical aura with migraine": "Typical_aura_migraine",
+    "Typical aura without migraine": "Typical_aura_migraine",
+    "Basilar-type aura": "Brainstem_aura_migraine",
+    "Familial hemiplegic migraine": "Hemiplegic_migraine",
+    "Sporadic hemiplegic migraine": "Hemiplegic_migraine",
+    "Other": "Probable_migraine",
+}
+
+TYPE_DISPLAY_MAP = {
+    "Migraine_without_aura": "Migraine without aura",
+    "Typical_aura_migraine": "Migraine with aura",
+    "Brainstem_aura_migraine": "Migraine with brainstem aura",
+    "Hemiplegic_migraine": "Hemiplegic migraine",
+    "Retinal_migraine": "Retinal migraine",
+    "Chronic_migraine": "Chronic migraine",
+    "Menstrual_migraine": "Menstrual migraine",
+    "Vestibular_migraine": "Vestibular migraine",
+    "Status_migrainosus": "Status migrainosus",
+    "Probable_migraine": "Probable migraine",
+}
 
 
 def _xgb_device():
     """Return 'cuda' for GPU, else 'cpu'. Set USE_GPU=False to force CPU."""
     return "cuda" if USE_GPU else "cpu"
+
+
+def _safe_pct(value) -> float:
+    if isinstance(value, str):
+        value = value.strip().replace("%", "")
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+def _load_symptom_profiles(path: str) -> dict:
+    """Parse sysmptoms.txt markdown table into canonical profile dict."""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Symptoms file not found: {path}")
+
+    lines = [ln.strip() for ln in open(path, "r", encoding="utf-8").read().splitlines() if ln.strip()]
+    table_lines = [ln for ln in lines if "|" in ln and not ln.startswith("---")]
+    if len(table_lines) < 2:
+        raise ValueError(f"Invalid symptoms table format in {path}")
+
+    headers = [h.strip() for h in table_lines[0].split("|") if h.strip()]
+    profiles = {}
+    for ln in table_lines[1:]:
+        parts = [p.strip() for p in ln.split("|") if p.strip()]
+        if len(parts) != len(headers):
+            continue
+        row = dict(zip(headers, parts))
+        migraine_type = row.pop("Migraine Type", "").strip()
+        explanation = row.pop("Explanation", "").strip()
+        symptom_weights = {k: _safe_pct(v) for k, v in row.items()}
+        profiles[migraine_type] = {"explanation": explanation, "symptoms": symptom_weights}
+    return profiles
+
+
+def _extract_patient_signal(sample_row: pd.Series) -> dict:
+    """Map dataset columns to symptom signal strengths (0..100)."""
+    return {
+        "Throb": 100.0 if float(sample_row.get("Character", 0)) == 1 else 40.0,
+        "Nausea": float(sample_row.get("Nausea", 0)) * 100.0,
+        "Photo": float(sample_row.get("Photophobia", 0)) * 100.0,
+        "Phono": float(sample_row.get("Phonophobia", 0)) * 100.0,
+        "VisualAura": min(100.0, float(sample_row.get("Visual", 0)) * 50.0),
+        "SensoryAura": min(100.0, float(sample_row.get("Sensory", 0)) * 50.0),
+        "Speech": min(100.0, float(sample_row.get("Dysphasia", 0)) * 100.0),
+        "Weakness": min(100.0, float(sample_row.get("Defect", 0)) * 100.0),
+        "Vertigo": float(sample_row.get("Vertigo", 0)) * 100.0,
+        "Tinnitus": float(sample_row.get("Tinnitus", 0)) * 100.0,
+        "MonoVisionLoss": float(sample_row.get("Defect", 0)) * 100.0,
+        ">72h": 100.0 if float(sample_row.get("Duration", 0)) >= 72 else 0.0,
+        "Hormonal": 0.0,
+    }
+
+
+def _impact_from_symptoms(symptoms: dict, patient_signal: dict) -> dict:
+    """Build chart-ready impact categories expected by frontend."""
+    def weighted(names):
+        vals = [symptoms.get(n, 0.0) * (0.65 + 0.35 * (patient_signal.get(n, 0.0) / 100.0)) for n in names]
+        return float(np.mean(vals)) if vals else 0.0
+
+    pain = weighted(["Throb", "Nausea", "Photo", "Phono"])
+    aura = weighted(["VisualAura", "SensoryAura", "Speech"])
+    neuro = weighted(["Speech", "Weakness", "Vertigo", "Tinnitus"])
+    vestibular = weighted(["Vertigo", "Tinnitus"])
+    vision = weighted(["VisualAura", "MonoVisionLoss", "Photo"])
+    hormonal = weighted(["Hormonal"])
+    duration_signal = 100.0 if patient_signal.get(">72h", 0.0) >= 100 else min(100.0, patient_signal.get(">72h", 0.0) + 40.0)
+    frequency = float(np.clip((symptoms.get(">72h", 0.0) * 0.35) + duration_signal * 0.65, 0, 100))
+
+    return {
+        "pain": round(np.clip(pain, 0, 100), 1),
+        "aura": round(np.clip(aura, 0, 100), 1),
+        "neuro": round(np.clip(neuro, 0, 100), 1),
+        "frequency": round(np.clip(frequency, 0, 100), 1),
+        "hormonal": round(np.clip(hormonal, 0, 100), 1),
+        "vestibular": round(np.clip(vestibular, 0, 100), 1),
+        "vision": round(np.clip(vision, 0, 100), 1),
+    }
+
+
+def _export_patient_analytics_json(model, X_test, y_encoder, df_raw: pd.DataFrame, test_idx: np.ndarray):
+    """Export model+symptom-based analytics payload for frontend charts."""
+    if X_test.shape[0] == 0:
+        print("  Skipping analytics export: empty test set")
+        return
+
+    symptom_profiles = _load_symptom_profiles(SYMPTOMS_PATH)
+    canonical_types = list(symptom_profiles.keys())
+
+    proba = model.predict_proba(X_test)
+    confidence = proba.max(axis=1)
+    best_i = int(np.argmax(confidence))
+    best_row_index = int(X_test.index[best_i])
+    sample_row = df_raw.loc[best_row_index]
+    patient_signal = _extract_patient_signal(sample_row)
+
+    class_probs = {}
+    for class_idx, class_name in enumerate(y_encoder.classes_):
+        canonical = TYPE_CANONICAL_MAP.get(str(class_name), str(class_name))
+        class_probs[canonical] = class_probs.get(canonical, 0.0) + float(proba[best_i, class_idx])
+
+    # Normalize model probabilities over known mapped classes
+    model_total = sum(class_probs.values()) or 1.0
+    class_probs = {k: v / model_total for k, v in class_probs.items()}
+
+    # Build symptom-similarity score for all canonical classes so classes not
+    # represented in training still receive clinically plausible non-zero mass.
+    similarity_raw = {}
+    for canonical in canonical_types:
+        symptoms = symptom_profiles[canonical]["symptoms"]
+        keys = list(symptoms.keys())
+        if not keys:
+            similarity_raw[canonical] = 0.0
+            continue
+        score = float(
+            np.mean(
+                [
+                    (symptoms.get(k, 0.0) / 100.0)
+                    * (0.45 + 0.55 * (patient_signal.get(k, 0.0) / 100.0))
+                    for k in keys
+                ]
+            )
+        )
+        similarity_raw[canonical] = max(0.0, score)
+    sim_total = sum(similarity_raw.values()) or 1.0
+    similarity_probs = {k: v / sim_total for k, v in similarity_raw.items()}
+
+    # Blend model prediction and similarity score (real-world friendly fallback)
+    blended = {}
+    for canonical in canonical_types:
+        model_part = class_probs.get(canonical, 0.0)
+        sim_part = similarity_probs.get(canonical, 0.0)
+        blended[canonical] = 0.75 * model_part + 0.25 * sim_part
+    blend_total = sum(blended.values()) or 1.0
+    class_probs = {k: v / blend_total for k, v in blended.items()}
+
+    predictions = []
+    for canonical in canonical_types:
+        profile = symptom_profiles[canonical]
+        symptoms = profile["symptoms"]
+        impact = _impact_from_symptoms(symptoms, patient_signal)
+
+        # symptom-level effect (symptom template x patient signal x probability)
+        symptom_effects = {
+            k: (symptoms.get(k, 0.0) / 100.0)
+            * (0.4 + 0.6 * (patient_signal.get(k, 0.0) / 100.0))
+            * class_probs.get(canonical, 0.0)
+            for k in symptoms.keys()
+        }
+        top_symptoms = [k for k, _ in sorted(symptom_effects.items(), key=lambda kv: kv[1], reverse=True)[:3]]
+
+        predictions.append(
+            {
+                "type": TYPE_DISPLAY_MAP.get(canonical, canonical.replace("_", " ")),
+                "probability": round(class_probs.get(canonical, 0.0) * 100.0, 1),
+                "summary": profile["explanation"],
+                "keySymptoms": top_symptoms,
+                "impact": impact,
+            }
+        )
+
+    predictions.sort(key=lambda x: x["probability"], reverse=True)
+    top_pred = predictions[0]
+
+    os.makedirs(os.path.dirname(ANALYTICS_EXPORT_PATH), exist_ok=True)
+    payload = {
+        "generatedAt": pd.Timestamp.utcnow().isoformat(),
+        "source": "run_pipeline.py + sysmptoms.txt",
+        "selectedSampleIndex": best_row_index,
+        "predictedType": top_pred["type"],
+        "confidence": top_pred["probability"],
+        "summary": top_pred["summary"],
+        "keySymptoms": top_pred["keySymptoms"],
+        "predictions": predictions,
+    }
+    with open(ANALYTICS_EXPORT_PATH, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    print(f"  Exported analytics JSON -> {ANALYTICS_EXPORT_PATH}")
 
 
 def step1_load_data(path=None, data_dir=None):
@@ -141,8 +347,10 @@ def step5_split(X, y, df=None, stratify_by_patient=False):
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
         )
+        train_idx = np.array(X_train.index)
+        test_idx = np.array(X_test.index)
     print(f"  Train: {X_train.shape[0]} rows, Test: {X_test.shape[0]} rows")
-    return X_train, X_test, y_train, y_test
+    return X_train, X_test, y_train, y_test, train_idx, test_idx
 
 
 def step6_train(X_train, y_train, X_test, y_test, n_classes):
@@ -255,13 +463,14 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
         raise ValueError("No target column found. Expected 'MigraineType' or 'Type'.")
 
     X, y, y_encoder, num_imputer, cat_imputer = step2_prepare_features_and_target(df, target_col)
-    X_train, X_test, y_train, y_test = step5_split(
+    X_train, X_test, y_train, y_test, _train_idx, test_idx = step5_split(
         X, y, df=df, stratify_by_patient=stratify_by_patient and "patient_id" in df.columns
     )
     n_classes = len(np.unique(y))
     model = step6_train(X_train, y_train, X_test, y_test, n_classes)
     step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder)
     step9_save(model, y_encoder, X.columns.tolist(), num_imputer=num_imputer, cat_imputer=cat_imputer)
+    _export_patient_analytics_json(model, X_test, y_encoder, df, test_idx)
 
     print("\n" + "=" * 60)
     print("Pipeline finished. Use predictModel.py for inference.")
