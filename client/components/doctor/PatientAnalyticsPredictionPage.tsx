@@ -784,7 +784,17 @@ function TelemetryCategoryCard({
   );
 }
 
-export default function PatientAnalyticsPredictionPage() {
+type PatientAnalyticsPredictionPageProps = {
+  /** When true, strip full-page chrome for use inside doctor patient detail. */
+  embedded?: boolean
+  /** Shown in the analytics banner when embedded in a patient profile. */
+  patientName?: string | null
+}
+
+export default function PatientAnalyticsPredictionPage({
+  embedded = false,
+  patientName = null,
+}: PatientAnalyticsPredictionPageProps = {}) {
   const sortedPredictions = [...migrainePredictions].sort((a, b) => b.probability - a.probability);
   const topPrediction = sortedPredictions[0];
 
@@ -804,11 +814,15 @@ export default function PatientAnalyticsPredictionPage() {
   const symptomShareData = topCategoryData.slice(0, 5);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className={embedded ? 'min-h-0' : 'min-h-screen bg-gray-50 p-4'}>
+      <div className={embedded ? 'max-w-full mx-auto space-y-6' : 'max-w-7xl mx-auto space-y-6'}>
         <div className="bg-linear-to-r from-blue-600 to-purple-600 p-6 rounded-xl text-white shadow-lg">
-          <h1 className="text-3xl font-bold">Patient Migraine Prediction Analytics</h1>
-          <p className="text-blue-100 mt-1">Single-page view with model outputs and symptom impact analytics</p>
+          <h1 className="text-2xl sm:text-3xl font-bold">Patient Migraine Prediction Analytics</h1>
+          <p className="text-blue-100 mt-1">
+            {patientName
+              ? `Model outputs and symptom impact for ${patientName}.`
+              : 'Single-page view with model outputs and symptom impact analytics'}
+          </p>
           <div className="text-sm text-blue-100 mt-2">Updated: {new Date().toLocaleString()}</div>
         </div>
 

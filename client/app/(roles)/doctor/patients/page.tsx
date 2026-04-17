@@ -39,6 +39,7 @@ import { ReportsTab } from '@/components/doctor/ReportsTab'
 import { CommunicationTab } from '@/components/doctor/CommunicationTab'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { FloatingChatIcon } from '@/components/chat/FloatingChatIcon'
+import PatientAnalyticsPredictionPage from '@/components/doctor/PatientAnalyticsPredictionPage'
 import { cn } from '@/lib/utils'
 
 const DOCTOR_PATIENTS_LIST_COLLAPSED_KEY = 'doctor-patients-list-collapsed'
@@ -357,7 +358,7 @@ export default function PatientsPage() {
         {/* Patient Profile Details */}
         <div className="w-full min-w-0">
           {selectedPatient ? (
-            <div className="space-y-4 sm:space-y-6 max-h-[calc(100vh-180px)] sm:max-h-[calc(100vh-200px)] overflow-y-auto pr-1 sm:pr-2">
+            <div className="space-y-4 sm:space-y-6 pr-1 sm:pr-2">
               {detailLoading && (
                 <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
                   <CardContent className="p-6 text-center text-gray-500">
@@ -389,16 +390,6 @@ export default function PatientsPage() {
                           <p className="text-sm sm:text-base text-gray-600 font-medium mt-1">{selectedPatient.condition}</p>
                         </div>
                         <div className="flex gap-2 flex-wrap">
-                          <Button 
-                            variant="default" 
-                            size="sm" 
-                            className="rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-xs sm:text-sm"
-                            onClick={() => window.location.href = '/doctor/patients/analytics'}
-                          >
-                            <Activity className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-                            <span className="hidden sm:inline">View Analytics</span>
-                            <span className="sm:hidden">Analytics</span>
-                          </Button>
                           <Button variant="outline" size="sm" className="rounded-xl text-xs sm:text-sm">
                             <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                             Edit
@@ -474,6 +465,14 @@ export default function PatientsPage() {
                   </CardContent>
                 </Card>
               </div>
+
+              <section
+                id="patient-migraine-analytics"
+                className="scroll-mt-6"
+                aria-label="Migraine prediction analytics"
+              >
+                <PatientAnalyticsPredictionPage embedded patientName={selectedPatient.name} />
+              </section>
 
               {/* Patient At-A-Glance Summary */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
@@ -633,7 +632,7 @@ export default function PatientsPage() {
                   <Activity className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 text-purple-600" />
                 </div>
                 <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2 sm:mb-3">Select a Patient</h3>
-                <p className="text-sm sm:text-base text-gray-600 max-w-md mx-auto px-4">Choose a patient from the list to view their complete profile, medical history, and analytics dashboard</p>
+                <p className="text-sm sm:text-base text-gray-600 max-w-md mx-auto px-4">Choose a patient from the list to view their complete profile, medical history, and migraine prediction analytics on the same page.</p>
               </CardContent>
             </Card>
           )}
