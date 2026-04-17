@@ -45,7 +45,17 @@ type MigraineTypePrediction = {
   };
 };
 
-const migrainePredictions: MigraineTypePrediction[] = [
+type AnalyticsPayload = {
+  generatedAt?: string;
+  source?: string;
+  predictedType?: string;
+  confidence?: number;
+  summary?: string;
+  keySymptoms?: string[];
+  predictions?: MigraineTypePrediction[];
+};
+
+const FALLBACK_MIGRAINE_PREDICTIONS: MigraineTypePrediction[] = [
   {
     type: "Migraine without aura",
     probability: 26,
@@ -795,7 +805,35 @@ export default function PatientAnalyticsPredictionPage({
   embedded = false,
   patientName = null,
 }: PatientAnalyticsPredictionPageProps) {
-  const sortedPredictions = [...migrainePredictions].sort((a, b) => b.probability - a.probability);
+  const [modelPayload, setModelPayload] = React.useState<AnalyticsPayload | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch("/model/patient_analytics_prediction.json", { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load model output: ${res.status}`);
+        return res.json();
+      })
+      .then((payload: AnalyticsPayload) => {
+        if (cancelled) return;
+        if (Array.isArray(payload?.predictions) && payload.predictions.length > 0) {
+          setModelPayload(payload);
+        }
+      })
+      .catch(() => {
+        // Keep fallback demo values if model output is unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const activePredictions =
+    modelPayload?.predictions && modelPayload.predictions.length > 0
+      ? modelPayload.predictions
+      : FALLBACK_MIGRAINE_PREDICTIONS;
+
+  const sortedPredictions = [...activePredictions].sort((a, b) => b.probability - a.probability);
   const topPrediction = sortedPredictions[0];
 
   const probabilityChartData = sortedPredictions.map((p) => ({
@@ -823,7 +861,12 @@ export default function PatientAnalyticsPredictionPage({
               ? `Model outputs and symptom impact for ${patientName}.`
               : 'Single-page view with model outputs and symptom impact analytics'}
           </p>
-          <div className="text-sm text-blue-100 mt-2">Updated: {new Date().toLocaleString()}</div>
+          <div className="text-sm text-blue-100 mt-2">
+            Updated:{" "}
+            {modelPayload?.generatedAt
+              ? new Date(modelPayload.generatedAt).toLocaleString()
+              : new Date().toLocaleString()}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

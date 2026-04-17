@@ -119,6 +119,9 @@ model MigraineEvent {
   severity           Int            // 1-10 scale
   duration           String?        // e.g., "6 hours", "4 hours"
   symptomsLog        String         // Could be JSON string for detailed symptoms
+  detectedSymptoms   String[]       // Normalized symptom labels used by model/rules (e.g., ["Photophobia", "Vertigo"])
+  migraineType       MigraineTypeClassification? // Clinician/model migraine type for this event
+  migraineTypeConfidence Float?     // 0-100 confidence for migraineType
   perceivedTriggers  String?        // Patient-reported triggers (comma-separated or JSON)
   
   // Medication Group & Effectiveness Tracking
@@ -178,9 +181,14 @@ model AIDiagnosticInsight {
   patient                PatientProfile @relation(fields: [patientId], references: [id])
   
   createdDatetime        DateTime       @default(now())
+  migraineType           MigraineTypeClassification? // Predicted migraine subtype
+  migraineTypeConfidence Float?         // 0-100 confidence score for migraine type
   diagnosticProbability  Float?         // 
   riskAlertLevel         RiskAlertLevel // 
   keyContributors        String[]       // e.g., ["Weather", "Sleep", "Stress"]
+  detectedSymptoms       String[]       // Structured symptoms used by inference pipeline
+  modelName              String?        // e.g., "xgboost"
+  modelVersion           String?        // e.g., "xgb-v1.2.0"
 } 
 
 // Doctor appointment with patient
@@ -331,4 +339,17 @@ enum MedicationEffectiveness {
 enum ChatSenderRole {
   DOCTOR
   PATIENT
+}
+
+enum MigraineTypeClassification {
+  MIGRAINE_WITHOUT_AURA
+  MIGRAINE_WITH_AURA
+  BRAINSTEM_AURA_MIGRAINE
+  HEMIPLEGIC_MIGRAINE
+  RETINAL_MIGRAINE
+  CHRONIC_MIGRAINE
+  MENSTRUAL_MIGRAINE
+  VESTIBULAR_MIGRAINE
+  STATUS_MIGRAINOSUS
+  PROBABLE_MIGRAINE
 }
