@@ -168,7 +168,7 @@ export default function PatientsPage() {
       <div className="max-w-[1920px] mx-auto space-y-4 sm:space-y-6">
         {/* Search and Filters */}
         <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
-          <CardContent className="p-4 sm:p-6">
+          <CardContent className=" sm:p-6">
             <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
