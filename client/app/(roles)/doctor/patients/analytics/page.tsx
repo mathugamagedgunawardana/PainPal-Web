@@ -1,3 +1,5 @@
 import PatientAnalyticsPredictionPage from "@/components/doctor/PatientAnalyticsPredictionPage";
 
-export default PatientAnalyticsPredictionPage;
+export default function DoctorPatientsAnalyticsPage() {
+  return <PatientAnalyticsPredictionPage />;
+}

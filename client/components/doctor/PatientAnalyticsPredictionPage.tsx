@@ -794,7 +794,7 @@ type PatientAnalyticsPredictionPageProps = {
 export default function PatientAnalyticsPredictionPage({
   embedded = false,
   patientName = null,
-}: PatientAnalyticsPredictionPageProps = {}) {
+}: PatientAnalyticsPredictionPageProps) {
   const sortedPredictions = [...migrainePredictions].sort((a, b) => b.probability - a.probability);
   const topPrediction = sortedPredictions[0];
 
