@@ -906,7 +906,7 @@ export default function PatientAnalyticsPredictionPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+{/*         <div className="bg-white rounded-lg border border-gray-200 p-5">
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="w-5 h-5 text-amber-600" />
             <h3 className="text-lg font-semibold text-gray-900">Mobile telemetry by trigger domain</h3>
@@ -932,9 +932,9 @@ export default function PatientAnalyticsPredictionPage() {
               );
             })}
           </div>
-        </div>
+        </div> */}
 
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+{/*         <div className="bg-white rounded-lg border border-gray-200 p-5">
           <div className="flex items-center gap-2 mb-3">
             <AlertCircle className="w-5 h-5 text-amber-600" />
             <h3 className="text-lg font-semibold text-gray-900">Category effects by migraine type</h3>
@@ -979,9 +979,9 @@ export default function PatientAnalyticsPredictionPage() {
               );
             })}
           </div>
-        </div>
+        </div> */}
 
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+{/*         <div className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Hormonal vs. vestibular burden (by type)</h3>
           <p className="text-sm text-gray-600 mb-4">
             Highlights how strongly hormone-related triggers and balance/vertigo load differ across subtypes for this patient.
@@ -1010,7 +1010,7 @@ export default function PatientAnalyticsPredictionPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   );

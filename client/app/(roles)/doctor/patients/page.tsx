@@ -26,7 +26,10 @@ import {
   Shield,
   CheckCircle,
   AlertCircle,
-  Download
+  Download,
+  PanelLeft,
+  PanelLeftClose,
+  Users,
 } from 'lucide-react'
 import { EpisodeHistoryTab } from '@/components/doctor/EpisodeHistoryTab'
 import { MedicationsTab } from '@/components/doctor/MedicationsTab'
@@ -36,6 +39,9 @@ import { ReportsTab } from '@/components/doctor/ReportsTab'
 import { CommunicationTab } from '@/components/doctor/CommunicationTab'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { FloatingChatIcon } from '@/components/chat/FloatingChatIcon'
+import { cn } from '@/lib/utils'
+
+const DOCTOR_PATIENTS_LIST_COLLAPSED_KEY = 'doctor-patients-list-collapsed'
 
 export type PatientListItem = {
   id: string
@@ -89,6 +95,27 @@ export default function PatientsPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
+  const [patientListCollapsed, setPatientListCollapsed] = useState(false)
+
+  useEffect(() => {
+    try {
+      setPatientListCollapsed(localStorage.getItem(DOCTOR_PATIENTS_LIST_COLLAPSED_KEY) === '1')
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const togglePatientListCollapsed = useCallback(() => {
+    setPatientListCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem(DOCTOR_PATIENTS_LIST_COLLAPSED_KEY, next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -215,12 +242,61 @@ export default function PatientsPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] xl:grid-cols-[320px_1fr] gap-4 sm:gap-6">
-        {/* Patient List */}
-        <div className="space-y-3 sm:space-y-4">
-          <div className="flex items-center justify-between">
+      <div
+        className={cn(
+          'grid gap-4 sm:gap-6',
+          patientListCollapsed
+            ? 'grid-cols-1 lg:grid-cols-[52px_1fr]'
+            : 'grid-cols-1 lg:grid-cols-[280px_1fr] xl:grid-cols-[320px_1fr]'
+        )}
+      >
+        {/* Patient list column: narrow rail when collapsed (desktop only) */}
+        <div className="min-w-0 flex flex-col gap-3 lg:gap-0">
+          {patientListCollapsed && (
+            <div className="hidden lg:flex flex-col items-center gap-3 sticky top-4 self-start w-full max-h-[calc(100vh-10rem)] rounded-xl border border-gray-200 bg-white/90 shadow-sm py-3 px-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0 rounded-lg border-purple-200 text-purple-700 hover:bg-purple-50"
+                onClick={togglePatientListCollapsed}
+                aria-label="Expand patient list"
+                title="Show patient list"
+              >
+                <PanelLeft className="h-5 w-5" />
+              </Button>
+              <Users className="h-5 w-5 text-purple-600 shrink-0" aria-hidden />
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-semibold tabular-nums">
+                {filteredPatients.length}
+              </Badge>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 [writing-mode:vertical-rl] rotate-180 select-none">
+                Patients
+              </span>
+            </div>
+          )}
+
+          <div className={cn('space-y-3 sm:space-y-4', patientListCollapsed && 'lg:hidden')}>
+          <div className="flex items-center justify-between gap-2">
             <h2 className="text-base sm:text-xl font-bold text-gray-800">Patients ({filteredPatients.length})</h2>
-            <Badge variant="secondary" className="text-xs sm:text-sm">{filteredPatients.length} Total</Badge>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge variant="secondary" className="text-xs sm:text-sm">{filteredPatients.length} Total</Badge>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="hidden lg:inline-flex rounded-lg border-gray-200 text-gray-600 hover:bg-gray-100"
+                onClick={togglePatientListCollapsed}
+                aria-expanded={!patientListCollapsed}
+                aria-label={patientListCollapsed ? 'Expand patient list' : 'Collapse patient list'}
+                title={patientListCollapsed ? 'Expand patient list' : 'Collapse patient list'}
+              >
+                {patientListCollapsed ? (
+                  <PanelLeft className="h-5 w-5" />
+                ) : (
+                  <PanelLeftClose className="h-5 w-5" />
+                )}
+              </Button>
+            </div>
           </div>
           <div className="space-y-2 max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-300px)] overflow-y-auto pr-1 sm:pr-2">
             {patientsError && (
@@ -274,6 +350,7 @@ export default function PatientsPage() {
                 </CardContent>
               </Card>
             ))}
+          </div>
           </div>
         </div>
 
