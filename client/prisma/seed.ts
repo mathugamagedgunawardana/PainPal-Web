@@ -105,6 +105,67 @@ function deriveEffectiveness(row: TrainingAttackRow): 'LOW' | 'MODERATE' | 'HIGH
   return 'MODERATE'
 }
 
+/** Maps CSV row fields onto MigraineEvent training columns */
+function trainingFieldsFromRow(row: TrainingAttackRow, rowIndex: number) {
+  const attackRaw = row.attack_id?.trim()
+  const attackNum = attackRaw !== undefined && attackRaw !== '' ? Number.parseInt(attackRaw, 10) : NaN
+  return {
+    csvPatientId: row.patient_id?.trim() || null,
+    csvAttackId: Number.isFinite(attackNum) ? attackNum : rowIndex + 1,
+    trainingAge: toInt(row.Age),
+    trainingDuration: toInt(row.Duration),
+    trainingFrequency: toInt(row.Frequency),
+    trainingLocation: toInt(row.Location),
+    trainingCharacter: toInt(row.Character),
+    trainingIntensity: toInt(row.Intensity),
+    nausea: toInt(row.Nausea),
+    vomit: toInt(row.Vomit),
+    phonophobia: toInt(row.Phonophobia),
+    photophobia: toInt(row.Photophobia),
+    visual: toInt(row.Visual),
+    sensory: toInt(row.Sensory),
+    dysphasia: toInt(row.Dysphasia),
+    dysarthria: toInt(row.Dysarthria),
+    vertigo: toInt(row.Vertigo),
+    tinnitus: toInt(row.Tinnitus),
+    hypoacusis: toInt(row.Hypoacusis),
+    diplopia: toInt(row.Diplopia),
+    defect: toInt(row.Defect),
+    ataxia: toInt(row.Ataxia),
+    conscience: toInt(row.Conscience),
+    paresthesia: toInt(row.Paresthesia),
+    dpf: toInt(row.DPF),
+    studyType: row.Type?.trim() || null,
+    csvMigraineType: row.MigraineType?.trim() || null,
+  }
+}
+
+/** Remove prior CSV-seeded events: new rows use csvImportMarker; legacy rows stored JSON in symptomsLog */
+async function deleteCsvSeededEventsForPatient(profileId: string) {
+  await prisma.migraineEvent.deleteMany({
+    where: {
+      patientId: profileId,
+      csvImportMarker: CSV_SEED_SOURCE,
+    },
+  })
+  const url = process.env.DATABASE_URL
+  if (!url) return
+  const { MongoClient, ObjectId } = await import('mongodb')
+  const client = new MongoClient(url)
+  try {
+    await client.connect()
+    const db = client.db()
+    await db.collection('MigraineEvent').deleteMany({
+      patientId: new ObjectId(profileId),
+      symptomsLog: { $regex: CSV_SEED_SOURCE },
+    })
+  } catch (e) {
+    console.warn('Legacy CSV seed cleanup (symptomsLog) skipped:', e)
+  } finally {
+    await client.close()
+  }
+}
+
 async function main() {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, SALT_ROUNDS)
 
@@ -294,11 +355,9 @@ async function main() {
       severity: 8, // Severe
       duration: '6 hours',
       triggers: 'Stress, Sleep',
-      symptomsLog: JSON.stringify({
-        mostIntenseSymptoms: ['Throbbing pain (R temple)', 'Nausea', 'Photophobia', 'Phonophobia'],
-        medicationsTakenDuringPeriod: ['Sumatriptan 50mg', 'Topiramate 25mg', 'Ibuprofen 400mg'],
-        notes: 'Pain peaked at hour 2. Sumatriptan taken at onset.',
-      }),
+      detectedSymptoms: ['Throbbing pain (R temple)', 'Nausea', 'Photophobia', 'Phonophobia'],
+      medicationsDuringEpisode: 'Sumatriptan 50mg, Topiramate 25mg, Ibuprofen 400mg',
+      episodeNotes: 'Pain peaked at hour 2. Sumatriptan taken at onset.',
       effectiveness: 'LOW' as const,
       medicationGroupId: medGroup1.id,
     },
@@ -307,10 +366,9 @@ async function main() {
       severity: 5,
       duration: '4 hours',
       triggers: 'Weather',
-      symptomsLog: JSON.stringify({
-        mostIntenseSymptoms: ['Pressure pain (bilateral)', 'Light sensitivity'],
-        medicationsTakenDuringPeriod: ['Sumatriptan 50mg', 'Topiramate 25mg'],
-      }),
+      detectedSymptoms: ['Pressure pain (bilateral)', 'Light sensitivity'],
+      medicationsDuringEpisode: 'Sumatriptan 50mg, Topiramate 25mg',
+      episodeNotes: null as string | null,
       effectiveness: 'MODERATE' as const,
       medicationGroupId: medGroup1.id,
     },
@@ -319,10 +377,9 @@ async function main() {
       severity: 2,
       duration: '2 hours',
       triggers: 'Caffeine',
-      symptomsLog: JSON.stringify({
-        mostIntenseSymptoms: ['Mild throbbing', 'Tiredness'],
-        medicationsTakenDuringPeriod: ['Ibuprofen 400mg'],
-      }),
+      detectedSymptoms: ['Mild throbbing', 'Tiredness'],
+      medicationsDuringEpisode: 'Ibuprofen 400mg',
+      episodeNotes: null as string | null,
       effectiveness: 'HIGH' as const,
       medicationGroupId: medGroup3.id,
     },
@@ -331,11 +388,9 @@ async function main() {
       severity: 9,
       duration: '8 hours',
       triggers: 'Stress, Bright Lights',
-      symptomsLog: JSON.stringify({
-        mostIntenseSymptoms: ['Severe throbbing', 'Nausea', 'Vomiting', 'Visual aura', 'Photophobia'],
-        medicationsTakenDuringPeriod: ['Sumatriptan 100mg', 'Topiramate 25mg', 'Metoclopramide 10mg'],
-        notes: 'Aura preceded headache by ~20 min.',
-      }),
+      detectedSymptoms: ['Severe throbbing', 'Nausea', 'Vomiting', 'Visual aura', 'Photophobia'],
+      medicationsDuringEpisode: 'Sumatriptan 100mg, Topiramate 25mg, Metoclopramide 10mg',
+      episodeNotes: 'Aura preceded headache by ~20 min.',
       effectiveness: 'LOW' as const,
       medicationGroupId: medGroup1.id,
     },
@@ -349,7 +404,9 @@ async function main() {
         severity: ep.severity,
         duration: ep.duration,
         perceivedTriggers: ep.triggers,
-        symptomsLog: ep.symptomsLog,
+        detectedSymptoms: ep.detectedSymptoms,
+        medicationsDuringEpisode: ep.medicationsDuringEpisode,
+        episodeNotes: ep.episodeNotes,
         medicationGroupId: ep.medicationGroupId,
         effectiveness: ep.effectiveness,
       },
@@ -454,13 +511,7 @@ async function main() {
       const rows = readCsvRows(csvPath)
       if (!rows.length) continue
 
-      // Idempotent cleanup for previously generated CSV-seeded rows only
-      await prisma.migraineEvent.deleteMany({
-        where: {
-          patientId: item.profileId,
-          symptomsLog: { contains: CSV_SEED_SOURCE },
-        },
-      })
+      await deleteCsvSeededEventsForPatient(item.profileId)
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i]
@@ -469,28 +520,6 @@ async function main() {
         const eventDate = new Date(baseDate)
         eventDate.setUTCDate(baseDate.getUTCDate() - i - (item.patientNumber - 1) * 45)
 
-        const symptomsPayload = {
-          source: CSV_SEED_SOURCE,
-          csvPatientId: row.patient_id ?? `P${String(item.patientNumber).padStart(3, '0')}`,
-          attackId: row.attack_id ?? String(i + 1),
-          detectedSymptoms,
-          rawFeatures: {
-            Nausea: toInt(row.Nausea),
-            Vomit: toInt(row.Vomit),
-            Phonophobia: toInt(row.Phonophobia),
-            Photophobia: toInt(row.Photophobia),
-            Visual: toInt(row.Visual),
-            Sensory: toInt(row.Sensory),
-            Dysphasia: toInt(row.Dysphasia),
-            Dysarthria: toInt(row.Dysarthria),
-            Vertigo: toInt(row.Vertigo),
-            Tinnitus: toInt(row.Tinnitus),
-            Defect: toInt(row.Defect),
-            Ataxia: toInt(row.Ataxia),
-            Paresthesia: toInt(row.Paresthesia),
-          },
-        }
-
         await prisma.migraineEvent.create({
           data: {
             patientId: item.profileId,
@@ -498,8 +527,10 @@ async function main() {
             severity: deriveSeverity(row),
             duration: deriveDurationText(row),
             perceivedTriggers: triggers.join(', '),
-            symptomsLog: JSON.stringify(symptomsPayload),
+            detectedSymptoms,
             effectiveness: deriveEffectiveness(row),
+            csvImportMarker: CSV_SEED_SOURCE,
+            ...trainingFieldsFromRow(row, i),
           },
         })
       }

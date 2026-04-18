@@ -13,23 +13,9 @@ function severityLabel(severity: number): string {
   return 'Mild'
 }
 
-/** Parse symptomsLog JSON; may contain mostIntenseSymptoms, medicationsTakenDuringPeriod, notes */
-function parseSymptomsLog(symptomsLog: string | null): {
-  mostIntenseSymptoms: string[]
-  medicationsTakenDuringPeriod: string[]
-  notes?: string
-} {
-  const out = { mostIntenseSymptoms: [] as string[], medicationsTakenDuringPeriod: [] as string[], notes: undefined as string | undefined }
-  if (!symptomsLog?.trim()) return out
-  try {
-    const parsed = JSON.parse(symptomsLog) as Record<string, unknown>
-    if (Array.isArray(parsed.mostIntenseSymptoms)) out.mostIntenseSymptoms = parsed.mostIntenseSymptoms as string[]
-    if (Array.isArray(parsed.medicationsTakenDuringPeriod)) out.medicationsTakenDuringPeriod = parsed.medicationsTakenDuringPeriod as string[]
-    if (typeof parsed.notes === 'string') out.notes = parsed.notes
-  } catch {
-    // ignore
-  }
-  return out
+function splitMedicationList(s: string | null | undefined): string[] {
+  if (!s?.trim()) return []
+  return s.split(',').map((x) => x.trim()).filter(Boolean)
 }
 
 /** GET /api/patients/[id] – single patient with full relations (for doctor detail view) */
@@ -137,7 +123,6 @@ export async function GET(
       }
 
       const episodeHistory = (patient.migraineEvents || []).map((e) => {
-        const parsed = parseSymptomsLog(e.symptomsLog)
         const triggers = e.perceivedTriggers
           ? e.perceivedTriggers.split(',').map((s) => s.trim()).filter(Boolean)
           : []
@@ -146,9 +131,9 @@ export async function GET(
           severity: severityLabel(e.severity),
           duration: e.duration ?? '—',
           triggers,
-          mostIntenseSymptoms: parsed.mostIntenseSymptoms,
-          medicationsTakenDuringPeriod: parsed.medicationsTakenDuringPeriod,
-          notes: parsed.notes,
+          mostIntenseSymptoms: e.detectedSymptoms ?? [],
+          medicationsTakenDuringPeriod: splitMedicationList(e.medicationsDuringEpisode),
+          notes: e.episodeNotes ?? undefined,
         }
       })
 
