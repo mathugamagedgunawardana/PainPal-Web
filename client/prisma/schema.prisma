@@ -88,6 +88,24 @@ model PatientProfile {
   clinicalNotes   ClinicalNote[]
   communications  Communication[]
   conversations   Conversation[]
+  patientMriScans PatientMriScan[]
+}
+
+/// Brain MRI uploads from the Painpal mobile app (metadata only; wire object storage for DICOM in production).
+model PatientMriScan {
+  id               String         @id @default(auto()) @map("_id") @db.ObjectId
+  patientId        String         @db.ObjectId
+  patient          PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  originalFileName String
+  mimeType         String?
+  fileSizeBytes    Int?
+
+  prediction       String
+  confidence       Float
+  modelLabel       String?
+
+  createdAt        DateTime       @default(now())
 }
 
 // ----------------------------------------------
