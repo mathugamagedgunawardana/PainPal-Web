@@ -9,5 +9,6 @@
     0.229,
     0.224,
     0.225
-  ]
+  ],
+  "tumor_confidence_threshold": 0.7
 }
