@@ -7,7 +7,7 @@ import { getPatientProfileForUser } from '@/lib/patient/getPatientProfileForUser
  * GET /api/patient/migraine-events — migraine rows for the logged-in patient (Flutter History).
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireRole(req, ['PATIENT'])s
+  const auth = await requireRole(req, ['PATIENT'])
   if (!auth.authorized) return auth.response!
 
   const patient = await getPatientProfileForUser(auth.user!)
