@@ -494,7 +494,7 @@ def step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder, model_c
     return test_acc
 
 
-def step9_save(model, target_encoder, feature_names, num_imputer=None, cat_imputer=None):
+def step9_save(model, target_encoder, feature_names, num_imputer=None, cat_imputer=None, model_class_ids=None):
     """Step 9: Save model and encoders."""
     print("\n" + "=" * 60)
     print("Step 9: Save model and encoders")
@@ -506,6 +506,7 @@ def step9_save(model, target_encoder, feature_names, num_imputer=None, cat_imput
         feature_names=feature_names,
         num_imputer=num_imputer,
         cat_imputer=cat_imputer,
+        model_class_ids=model_class_ids,
     )
 
 
@@ -553,7 +554,14 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
     )
     model, model_class_ids = step6_train(X_train, y_train, X_test, y_test)
     step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder, model_class_ids)
-    step9_save(model, y_encoder, X.columns.tolist(), num_imputer=num_imputer, cat_imputer=cat_imputer)
+    step9_save(
+        model,
+        y_encoder,
+        X.columns.tolist(),
+        num_imputer=num_imputer,
+        cat_imputer=cat_imputer,
+        model_class_ids=model_class_ids,
+    )
     _export_patient_analytics_json(model, X_test, y_encoder, df, test_idx, model_class_ids=model_class_ids)
 
     print("\n" + "=" * 60)

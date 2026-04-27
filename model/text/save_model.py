@@ -16,6 +16,7 @@ def save_artifacts(
     feature_names=None,
     num_imputer=None,
     cat_imputer=None,
+    model_class_ids=None,
     out_dir=".",
     model_name="xgboost_patient_model.pkl",
     encoder_name="label_encoder.pkl",
@@ -30,6 +31,8 @@ def save_artifacts(
         feature_names: Optional list of feature column names in model order.
         num_imputer: Optional SimpleImputer for numeric columns.
         cat_imputer: Optional SimpleImputer for categorical columns.
+        model_class_ids: Optional array mapping XGBoost local class index to
+            LabelEncoder integer label (training subset order).
         out_dir: Directory to write files (default current dir).
         model_name: Filename for the model.
         encoder_name: Filename for the target label encoder.
@@ -65,6 +68,11 @@ def save_artifacts(
         cat_path = os.path.join(artifacts_dir, "cat_imputer.joblib")
         joblib.dump(cat_imputer, cat_path)
         print(f"  Saved categorical imputer -> {cat_path}")
+
+    if model_class_ids is not None:
+        mid_path = os.path.join(artifacts_dir, "model_class_ids.joblib")
+        joblib.dump(model_class_ids, mid_path)
+        print(f"  Saved model class id map -> {mid_path}")
 
     print("  Step 9 (Save) completed.")
 
