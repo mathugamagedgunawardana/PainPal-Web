@@ -164,6 +164,7 @@ def _resolve_under_text(p: str | None) -> str | None:
 
 
 @app.get("/health")
+@app.get("/api/health")
 def health():
     ok = "model" in _serving
     return {
