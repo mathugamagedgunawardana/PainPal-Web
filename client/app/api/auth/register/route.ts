@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { DoctorProfile, PatientProfile } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth/password';
 import { signToken, setAuthCookie } from '@/lib/auth/jwt';
+import { doctorProfileToMobile, patientProfileToMobile } from '@/lib/auth/mobileAuthResponse';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +11,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { email, password, role, name, phone, avatar, ...profileData } = body;
+    const dobInput =
+      profileData.dob ?? profileData.dateOfBirth ?? body.dateOfBirth ?? body.dob;
 
     // Validate required fields
     if (!email || !password || !role || !name) {
@@ -93,7 +97,7 @@ export async function POST(request: NextRequest) {
           patientProfile: {
             create: {
               name,
-              dob: profileData.dob ? new Date(profileData.dob) : new Date(),
+              dob: dobInput ? new Date(dobInput) : new Date(),
               gender: profileData.gender || null,
               phone: phone || null,
               email: email,
@@ -119,19 +123,39 @@ export async function POST(request: NextRequest) {
     // Set auth cookie
     await setAuthCookie(token);
 
-    return NextResponse.json(
-      {
-        message: 'Registration successful',
-        token,
-        user: {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-          name,
-        },
+    const baseBody = {
+      message: 'Registration successful',
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        name,
       },
-      { status: 201 }
-    );
+    };
+
+    if (role === 'PATIENT') {
+      const patientProfile = (user as unknown as { patientProfile: PatientProfile }).patientProfile;
+      return NextResponse.json(
+        {
+          ...baseBody,
+          patientProfile: patientProfileToMobile(patientProfile),
+        },
+        { status: 201 }
+      );
+    }
+    if (role === 'DOCTOR') {
+      const doctorProfile = (user as unknown as { doctorProfile: DoctorProfile }).doctorProfile;
+      return NextResponse.json(
+        {
+          ...baseBody,
+          doctorProfile: doctorProfileToMobile(doctorProfile),
+        },
+        { status: 201 }
+      );
+    }
+
+    return NextResponse.json(baseBody, { status: 201 });
   } catch (error) {
     console.error('Registration error:', error);
     return NextResponse.json(

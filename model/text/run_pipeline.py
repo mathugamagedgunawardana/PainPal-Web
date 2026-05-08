@@ -28,11 +28,29 @@ from data_loader import (
 )
 
 # Config
+SYNTHETIC_DATA_PATH = "migraine_data_synthetic.csv"
 DATA_PATH = "migraine_data.csv"
 DATA_DIR = "Data"  # folder with patient_*_migraine_attacks.csv
 LABELED_DIR = os.path.join("Data", "traningData_labeled")
 CATEGORICAL_COLS = ["Location", "Character", "DPF"]
 TARGET = "Type"
+ONE_HOT_TARGET_COLS = [
+    "Migraine_without_aura",
+    "Typical_aura_migraine",
+    "Brainstem_aura_migraine",
+    "Hemiplegic_migraine",
+    "Retinal_migraine",
+    "Chronic_migraine",
+    "Menstrual_migraine",
+    "Vestibular_migraine",
+    "Status_migrainosus",
+    "Probable_migraine",
+]
+LEGACY_ONE_HOT_TARGET_COLS = [
+    "Migraine without aura",
+    "Basilar-type aura",
+    "Typical aura with migraine",
+]
 RANDOM_STATE = 42
 TEST_SIZE = 0.2
 # When using Data folder: split by patient so test set = unseen patients
@@ -45,6 +63,16 @@ ANALYTICS_EXPORT_PATH = os.path.normpath(
 )
 
 TYPE_CANONICAL_MAP = {
+    "Migraine_without_aura": "Migraine_without_aura",
+    "Typical_aura_migraine": "Typical_aura_migraine",
+    "Brainstem_aura_migraine": "Brainstem_aura_migraine",
+    "Hemiplegic_migraine": "Hemiplegic_migraine",
+    "Retinal_migraine": "Retinal_migraine",
+    "Chronic_migraine": "Chronic_migraine",
+    "Menstrual_migraine": "Menstrual_migraine",
+    "Vestibular_migraine": "Vestibular_migraine",
+    "Status_migrainosus": "Status_migrainosus",
+    "Probable_migraine": "Probable_migraine",
     "Migraine without aura": "Migraine_without_aura",
     "Typical aura with migraine": "Typical_aura_migraine",
     "Typical aura without migraine": "Typical_aura_migraine",
@@ -151,7 +179,14 @@ def _impact_from_symptoms(symptoms: dict, patient_signal: dict) -> dict:
     }
 
 
-def _export_patient_analytics_json(model, X_test, y_encoder, df_raw: pd.DataFrame, test_idx: np.ndarray):
+def _export_patient_analytics_json(
+    model,
+    X_test,
+    y_encoder,
+    df_raw: pd.DataFrame,
+    test_idx: np.ndarray,
+    model_class_ids: np.ndarray | None = None,
+):
     """Export model+symptom-based analytics payload for frontend charts."""
     if X_test.shape[0] == 0:
         print("  Skipping analytics export: empty test set")
@@ -168,9 +203,15 @@ def _export_patient_analytics_json(model, X_test, y_encoder, df_raw: pd.DataFram
     patient_signal = _extract_patient_signal(sample_row)
 
     class_probs = {}
-    for class_idx, class_name in enumerate(y_encoder.classes_):
+    class_ids = (
+        np.array(model_class_ids, dtype=int)
+        if model_class_ids is not None
+        else np.arange(len(y_encoder.classes_), dtype=int)
+    )
+    for local_idx, original_class_idx in enumerate(class_ids):
+        class_name = y_encoder.classes_[int(original_class_idx)]
         canonical = TYPE_CANONICAL_MAP.get(str(class_name), str(class_name))
-        class_probs[canonical] = class_probs.get(canonical, 0.0) + float(proba[best_i, class_idx])
+        class_probs[canonical] = class_probs.get(canonical, 0.0) + float(proba[best_i, local_idx])
 
     # Normalize model probabilities over known mapped classes
     model_total = sum(class_probs.values()) or 1.0
@@ -275,18 +316,36 @@ def step1_load_data(path=None, data_dir=None):
     return df
 
 
-def step2_prepare_features_and_target(df, target_col):
+def step2_prepare_features_and_target(df, target_col, one_hot_target_cols=None):
     """Steps 2–4: Define target, engineer features, impute, one-hot encode, encode target."""
     print("\n" + "=" * 60)
     print("Steps 2–4: Prepare features and target")
     print("=" * 60)
+    # Build target labels and drop target columns from features
+    using_one_hot_targets = bool(one_hot_target_cols)
+    if using_one_hot_targets:
+        one_hot_df = df[one_hot_target_cols].copy()
+        one_hot_df = one_hot_df.apply(pd.to_numeric, errors="coerce").fillna(0)
+        # If no positive class in a row, fallback to first configured class for stability.
+        no_positive = one_hot_df.sum(axis=1) <= 0
+        if no_positive.any():
+            one_hot_df.loc[no_positive, one_hot_target_cols[0]] = 1
+        y_series = one_hot_df.idxmax(axis=1).astype(str)
+        drop_cols = list(one_hot_target_cols)
+    else:
+        y_series = df[target_col].astype(str)
+        drop_cols = [target_col]
+
+    # Drop target columns and any ID columns so they are not used as features.
+    # This prevents leakage when CSVs carry legacy or alternate one-hot target sets.
+    known_target_cols = set(ONE_HOT_TARGET_COLS) | set(LEGACY_ONE_HOT_TARGET_COLS) | {TARGET, "MigraineType"}
+    drop_cols.extend([c for c in known_target_cols if c in df.columns])
+
     # Drop target and any ID columns (patient_id, attack_id) so they are not used as features
-    drop_cols = [target_col]
     for c in ID_COLS:
         if c in df.columns:
             drop_cols.append(c)
     X = df.drop(columns=[c for c in drop_cols if c in df.columns]).copy()
-    y_series = df[target_col].astype(str)
 
     # Feature engineering
     if "Intensity" in X.columns and "Frequency" in X.columns:
@@ -344,8 +403,20 @@ def step5_split(X, y, df=None, stratify_by_patient=False):
         y_train, y_test = y[train_idx], y[test_idx]
         print(f"  Split by patient: {len(patients) - n_test} train patients, {n_test} test patients")
     else:
+        unique, counts = np.unique(y, return_counts=True)
+        min_count = int(counts.min()) if len(counts) else 0
+        use_stratify = min_count >= 2
+        if not use_stratify:
+            print(
+                "  Warning: Some classes have fewer than 2 samples; "
+                "falling back to non-stratified split."
+            )
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
+            X,
+            y,
+            test_size=TEST_SIZE,
+            random_state=RANDOM_STATE,
+            stratify=y if use_stratify else None,
         )
         train_idx = np.array(X_train.index)
         test_idx = np.array(X_test.index)
@@ -353,24 +424,29 @@ def step5_split(X, y, df=None, stratify_by_patient=False):
     return X_train, X_test, y_train, y_test, train_idx, test_idx
 
 
-def step6_train(X_train, y_train, X_test, y_test, n_classes):
+def step6_train(X_train, y_train, X_test, y_test):
     """Step 6: Train XGBoost."""
     print("\n" + "=" * 60)
     print("Step 6: Train XGBoost")
     print("=" * 60)
+    train_class_ids = np.unique(y_train)
+    class_to_local = {int(c): i for i, c in enumerate(train_class_ids)}
+    y_train_local = np.array([class_to_local[int(c)] for c in y_train], dtype=int)
+    y_test_local = np.array([class_to_local.get(int(c), -1) for c in y_test], dtype=int)
+
     class_weights = compute_class_weight(
         class_weight="balanced",
-        classes=np.unique(y_train),
-        y=y_train,
+        classes=np.unique(y_train_local),
+        y=y_train_local,
     )
-    weight_map = dict(zip(np.unique(y_train), class_weights))
-    sample_weight = np.array([weight_map[c] for c in y_train])
+    weight_map = dict(zip(np.unique(y_train_local), class_weights))
+    sample_weight = np.array([weight_map[c] for c in y_train_local])
 
     device = _xgb_device()
     print(f"  GPU: {'Yes' if device == 'cuda' else 'No'}  (XGBoost device={device})")
     model = xgb.XGBClassifier(
         objective="multi:softprob",
-        num_class=n_classes,
+        num_class=len(train_class_ids),
         eval_metric="mlogloss",
         use_label_encoder=False,
         random_state=RANDOM_STATE,
@@ -385,35 +461,32 @@ def step6_train(X_train, y_train, X_test, y_test, n_classes):
         tree_method="hist",
         device=device,
     )
-    model.fit(
-        X_train,
-        y_train,
-        sample_weight=sample_weight,
-        eval_set=[(X_test, y_test)],
-        verbose=False,
-    )
+    eval_mask = y_test_local >= 0
+    eval_set = [(X_test.iloc[eval_mask], y_test_local[eval_mask])] if eval_mask.any() else None
+    model.fit(X_train, y_train_local, sample_weight=sample_weight, eval_set=eval_set, verbose=False)
     print("  Model training completed.")
-    return model
+    return model, train_class_ids
 
 
-def step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder):
+def step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder, model_class_ids):
     """Steps 7–8: Predict and evaluate."""
     print("\n" + "=" * 60)
     print("Steps 7–8: Predict and evaluate")
     print("=" * 60)
-    y_pred_test = model.predict(X_test)
+    y_pred_test_local = model.predict(X_test).astype(int)
+    y_pred_test = np.array([int(model_class_ids[i]) for i in y_pred_test_local], dtype=int)
     test_acc = accuracy_score(y_test, y_pred_test)
     print(f"  Test accuracy: {test_acc:.4f}")
 
     # Ensure report includes all classes even if some are missing in y_test
-    all_labels = list(range(len(y_encoder.classes_)))
+    all_labels = sorted(set(np.unique(y_test).tolist()) | set(np.unique(y_pred_test).tolist()))
     print(
         "\n  Classification report:\n",
         classification_report(
             y_test,
             y_pred_test,
             labels=all_labels,
-            target_names=y_encoder.classes_,
+            target_names=[y_encoder.classes_[i] for i in all_labels],
             zero_division=0,
         ),
     )
@@ -421,7 +494,7 @@ def step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder):
     return test_acc
 
 
-def step9_save(model, target_encoder, feature_names, num_imputer=None, cat_imputer=None):
+def step9_save(model, target_encoder, feature_names, num_imputer=None, cat_imputer=None, model_class_ids=None):
     """Step 9: Save model and encoders."""
     print("\n" + "=" * 60)
     print("Step 9: Save model and encoders")
@@ -433,6 +506,7 @@ def step9_save(model, target_encoder, feature_names, num_imputer=None, cat_imput
         feature_names=feature_names,
         num_imputer=num_imputer,
         cat_imputer=cat_imputer,
+        model_class_ids=model_class_ids,
     )
 
 
@@ -447,30 +521,48 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
     """
     os.makedirs("artifacts", exist_ok=True)
 
-    # Prefer labeled data if present and no args given
-    if data_dir is None and data_path is None and os.path.isdir(LABELED_DIR):
-        data_dir = LABELED_DIR
-    elif data_dir is None and data_path is None and os.path.isdir(DATA_DIR):
-        data_dir = DATA_DIR
+    # Default to synthetic CSV if present, else fallback to migraine_data.csv.
+    if data_dir is None and data_path is None:
+        data_path = SYNTHETIC_DATA_PATH if os.path.isfile(SYNTHETIC_DATA_PATH) else DATA_PATH
 
     df = step1_load_data(path=data_path or DATA_PATH, data_dir=data_dir)
 
-    if "MigraineType" in df.columns:
+    one_hot_target_cols = [c for c in ONE_HOT_TARGET_COLS if c in df.columns]
+    legacy_one_hot_target_cols = [c for c in LEGACY_ONE_HOT_TARGET_COLS if c in df.columns]
+    if len(one_hot_target_cols) >= 2:
+        target_col = None
+    elif len(legacy_one_hot_target_cols) >= 2:
+        one_hot_target_cols = legacy_one_hot_target_cols
+        target_col = None
+    elif "MigraineType" in df.columns:
         target_col = "MigraineType"
     elif TARGET in df.columns:
         target_col = TARGET
     else:
-        raise ValueError("No target column found. Expected 'MigraineType' or 'Type'.")
+        raise ValueError(
+            "No target column found. Expected one-hot columns "
+            f"{ONE_HOT_TARGET_COLS}, or 'MigraineType', or 'Type'."
+        )
 
-    X, y, y_encoder, num_imputer, cat_imputer = step2_prepare_features_and_target(df, target_col)
+    X, y, y_encoder, num_imputer, cat_imputer = step2_prepare_features_and_target(
+        df,
+        target_col=target_col,
+        one_hot_target_cols=one_hot_target_cols if target_col is None else None,
+    )
     X_train, X_test, y_train, y_test, _train_idx, test_idx = step5_split(
         X, y, df=df, stratify_by_patient=stratify_by_patient and "patient_id" in df.columns
     )
-    n_classes = len(np.unique(y))
-    model = step6_train(X_train, y_train, X_test, y_test, n_classes)
-    step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder)
-    step9_save(model, y_encoder, X.columns.tolist(), num_imputer=num_imputer, cat_imputer=cat_imputer)
-    _export_patient_analytics_json(model, X_test, y_encoder, df, test_idx)
+    model, model_class_ids = step6_train(X_train, y_train, X_test, y_test)
+    step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder, model_class_ids)
+    step9_save(
+        model,
+        y_encoder,
+        X.columns.tolist(),
+        num_imputer=num_imputer,
+        cat_imputer=cat_imputer,
+        model_class_ids=model_class_ids,
+    )
+    _export_patient_analytics_json(model, X_test, y_encoder, df, test_idx, model_class_ids=model_class_ids)
 
     print("\n" + "=" * 60)
     print("Pipeline finished. Use predictModel.py for inference.")
@@ -479,7 +571,7 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
 
 if __name__ == "__main__":
     import sys
-    # Train on labeled folder if present, else Data folder (per-person attack files)
+    # If a path is passed, use it; otherwise use synthetic CSV when available.
     if len(sys.argv) > 1:
         arg = sys.argv[1]
         if os.path.isdir(arg):
@@ -488,9 +580,5 @@ if __name__ == "__main__":
             run_pipeline(data_path=arg)
         else:
             run_pipeline()
-    elif os.path.isdir(LABELED_DIR):
-        run_pipeline(data_dir=LABELED_DIR)
-    elif os.path.isdir(DATA_DIR):
-        run_pipeline(data_dir=DATA_DIR)
     else:
         run_pipeline()
