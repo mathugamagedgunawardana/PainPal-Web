@@ -143,6 +143,13 @@ function clamp100(n: number) {
   return Math.min(100, Math.max(0, Math.round(n)));
 }
 
+function confidenceMeaning(p: number) {
+  if (p >= 80) return "High confidence: pattern is strongly consistent with this subtype.";
+  if (p >= 60) return "Moderate confidence: this subtype is most likely, but overlaps exist.";
+  if (p >= 40) return "Lower confidence: consider this as a leading hypothesis, not a final diagnosis.";
+  return "Low confidence: model separation between subtypes is weak for this profile.";
+}
+
 /**
  * Practical mobile inputs: `key` matches what you’d POST from the app.
  * `source` = typical capture path (user form, device sensor, public API, health SDK).
@@ -799,17 +806,23 @@ type PatientAnalyticsPredictionPageProps = {
   embedded?: boolean
   /** Shown in the analytics banner when embedded in a patient profile. */
   patientName?: string | null
+  /** Patient id for loading patient-specific analytics. */
+  patientId?: string | null
 }
 
 export default function PatientAnalyticsPredictionPage({
   embedded = false,
   patientName = null,
+  patientId = null,
 }: PatientAnalyticsPredictionPageProps) {
   const [modelPayload, setModelPayload] = React.useState<AnalyticsPayload | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
-    fetch("/model/patient_analytics_prediction.json", { cache: "no-store" })
+    const endpoint = patientId
+      ? `/api/patients/${patientId}/analytics`
+      : "/model/patient_analytics_prediction.json"
+    fetch(endpoint, { cache: "no-store", credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error(`Failed to load model output: ${res.status}`);
         return res.json();
@@ -826,7 +839,7 @@ export default function PatientAnalyticsPredictionPage({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [patientId]);
 
   const activePredictions =
     modelPayload?.predictions && modelPayload.predictions.length > 0
@@ -895,7 +908,7 @@ export default function PatientAnalyticsPredictionPage({
               <h3 className="text-base font-semibold">Confidence</h3>
             </div>
             <p className="text-4xl font-bold text-indigo-700">{topPrediction.probability}%</p>
-            <p className="text-sm text-gray-600 mt-2">Highest probability among all migraine type classes.</p>
+            <p className="text-sm text-gray-600 mt-2">{confidenceMeaning(topPrediction.probability)}</p>
           </div>
         </div>
 

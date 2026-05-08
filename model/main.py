@@ -85,7 +85,15 @@ def preprocess_features(df: pd.DataFrame) -> pd.DataFrame:
     categorical_cols = list(out.select_dtypes(include=["object", "category"]).columns)
 
     if _serving.get("num_imputer") is not None and numeric_cols:
-        out[numeric_cols] = _serving["num_imputer"].transform(out[numeric_cols])
+        expected = getattr(_serving["num_imputer"], "feature_names_in_", None)
+        expected_cols = [str(x) for x in expected.tolist()] if expected is not None else []
+        if expected_cols:
+            if "Aura" in expected_cols and "Aura" not in out.columns:
+                out["Aura"] = out.get("has_aura", 0).astype(int) if "has_aura" in out.columns else 0
+            aligned_numeric = out.reindex(columns=expected_cols, fill_value=0)
+            out[expected_cols] = _serving["num_imputer"].transform(aligned_numeric)
+        else:
+            out[numeric_cols] = _serving["num_imputer"].transform(out[numeric_cols])
     if _serving.get("cat_imputer") is not None and categorical_cols:
         out[categorical_cols] = _serving["cat_imputer"].transform(out[categorical_cols])
         out[categorical_cols] = out[categorical_cols].astype(str)

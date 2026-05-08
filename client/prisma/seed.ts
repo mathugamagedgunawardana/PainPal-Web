@@ -15,6 +15,89 @@ const CSV_SEED_SOURCE = 'trainingData_seed'
 
 type TrainingAttackRow = Record<string, string>
 
+function withRowOverrides(
+  row: TrainingAttackRow,
+  overrides: Partial<Record<string, string>>
+): TrainingAttackRow {
+  const next: TrainingAttackRow = { ...row }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (typeof value === 'string') {
+      next[key] = value
+    }
+  }
+  return next
+}
+
+function diversifiedRowForSeedPatient(
+  patientNumber: number,
+  row: TrainingAttackRow,
+  rowIndex: number
+): TrainingAttackRow {
+  const alternating = rowIndex % 2 === 0 ? '1' : '0'
+
+  switch (patientNumber) {
+    // Sarah: aura-heavy profile
+    case 1:
+      return withRowOverrides(row, {
+        Visual: '1',
+        Sensory: '1',
+        Dysphasia: alternating,
+        Phonophobia: '1',
+        Photophobia: '1',
+        Vertigo: '0',
+        Tinnitus: '0',
+        Type: 'Migraine with aura',
+      })
+
+    // John: vestibular/brainstem-like profile
+    case 2:
+      return withRowOverrides(row, {
+        Visual: '0',
+        Sensory: '0',
+        Dysphasia: '0',
+        Vertigo: '1',
+        Tinnitus: '1',
+        Hypoacusis: alternating,
+        Diplopia: alternating,
+        Defect: '0',
+        Type: 'Vestibular migraine',
+      })
+
+    // Emily: hormonal/menstrual leaning profile
+    case 3:
+      return withRowOverrides(row, {
+        Visual: '0',
+        Sensory: '0',
+        Dysphasia: '0',
+        Vertigo: '0',
+        Tinnitus: '0',
+        Nausea: '1',
+        Vomit: alternating,
+        Frequency: '1',
+        Type: 'Menstrual migraine',
+      })
+
+    // Michael: chronic without aura profile
+    case 4:
+      return withRowOverrides(row, {
+        Visual: '0',
+        Sensory: '0',
+        Dysphasia: '0',
+        Vertigo: '0',
+        Tinnitus: '0',
+        Nausea: '1',
+        Photophobia: '1',
+        Phonophobia: '1',
+        Frequency: '1',
+        Duration: '1',
+        Type: 'Chronic migraine',
+      })
+
+    default:
+      return row
+  }
+}
+
 function yearsAgo(years: number): Date {
   const d = new Date()
   d.setFullYear(d.getFullYear() - years)
@@ -348,71 +431,7 @@ async function main() {
   })
   console.log('Created medication groups for first patient')
 
-  // 6. Migraine events (episode history) for first patient – from previous mock
-  const episodes = [
-    {
-      date: '2024-12-15',
-      severity: 8, // Severe
-      duration: '6 hours',
-      triggers: 'Stress, Sleep',
-      detectedSymptoms: ['Throbbing pain (R temple)', 'Nausea', 'Photophobia', 'Phonophobia'],
-      medicationsDuringEpisode: 'Sumatriptan 50mg, Topiramate 25mg, Ibuprofen 400mg',
-      episodeNotes: 'Pain peaked at hour 2. Sumatriptan taken at onset.',
-      effectiveness: 'LOW' as const,
-      medicationGroupId: medGroup1.id,
-    },
-    {
-      date: '2024-12-10',
-      severity: 5,
-      duration: '4 hours',
-      triggers: 'Weather',
-      detectedSymptoms: ['Pressure pain (bilateral)', 'Light sensitivity'],
-      medicationsDuringEpisode: 'Sumatriptan 50mg, Topiramate 25mg',
-      episodeNotes: null as string | null,
-      effectiveness: 'MODERATE' as const,
-      medicationGroupId: medGroup1.id,
-    },
-    {
-      date: '2024-12-05',
-      severity: 2,
-      duration: '2 hours',
-      triggers: 'Caffeine',
-      detectedSymptoms: ['Mild throbbing', 'Tiredness'],
-      medicationsDuringEpisode: 'Ibuprofen 400mg',
-      episodeNotes: null as string | null,
-      effectiveness: 'HIGH' as const,
-      medicationGroupId: medGroup3.id,
-    },
-    {
-      date: '2024-11-28',
-      severity: 9,
-      duration: '8 hours',
-      triggers: 'Stress, Bright Lights',
-      detectedSymptoms: ['Severe throbbing', 'Nausea', 'Vomiting', 'Visual aura', 'Photophobia'],
-      medicationsDuringEpisode: 'Sumatriptan 100mg, Topiramate 25mg, Metoclopramide 10mg',
-      episodeNotes: 'Aura preceded headache by ~20 min.',
-      effectiveness: 'LOW' as const,
-      medicationGroupId: medGroup1.id,
-    },
-  ]
-
-  for (const ep of episodes) {
-    await prisma.migraineEvent.create({
-      data: {
-        patientId: patient1Id,
-        startDatetime: parseDate(ep.date),
-        severity: ep.severity,
-        duration: ep.duration,
-        perceivedTriggers: ep.triggers,
-        detectedSymptoms: ep.detectedSymptoms,
-        medicationsDuringEpisode: ep.medicationsDuringEpisode,
-        episodeNotes: ep.episodeNotes,
-        medicationGroupId: ep.medicationGroupId,
-        effectiveness: ep.effectiveness,
-      },
-    })
-  }
-  console.log('Created migraine events (episode history) for first patient')
+  // 6. Migraine events now come from CSV import below.
 
   // 7. Medication logs for first patient
   const medLogs = [
@@ -514,7 +533,7 @@ async function main() {
       await deleteCsvSeededEventsForPatient(item.profileId)
 
       for (let i = 0; i < rows.length; i++) {
-        const row = rows[i]
+        const row = diversifiedRowForSeedPatient(item.patientNumber, rows[i], i)
         const { detectedSymptoms, triggers } = buildSymptomsAndTriggers(row)
 
         const eventDate = new Date(baseDate)
