@@ -27,6 +27,7 @@ import {
   CheckCircle,
   AlertCircle,
   Download,
+  Loader2,
   PanelLeft,
   PanelLeftClose,
   Users,
@@ -97,12 +98,46 @@ export default function PatientsPage() {
   const [detailError, setDetailError] = useState<string | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
   const [patientListCollapsed, setPatientListCollapsed] = useState(false)
+  const [modelSyncRunning, setModelSyncRunning] = useState(false)
+  const [modelSyncPending, setModelSyncPending] = useState(0)
 
   useEffect(() => {
     try {
       setPatientListCollapsed(localStorage.getItem(DOCTOR_PATIENTS_LIST_COLLAPSED_KEY) === '1')
     } catch {
       /* ignore */
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const poll = async () => {
+      let nextMs = 10000
+      try {
+        const res = await fetch('/api/model/sync-status', { credentials: 'include', cache: 'no-store' })
+        if (!res.ok) return
+        const data = (await res.json()) as { running?: boolean; pendingSeedEvents?: number }
+        const running = Boolean(data.running)
+        nextMs = running ? 2500 : 10000
+        if (!cancelled) {
+          setModelSyncRunning(running)
+          setModelSyncPending(typeof data.pendingSeedEvents === 'number' ? data.pendingSeedEvents : 0)
+        }
+      } catch {
+        // Ignore transient polling errors in UI.
+      } finally {
+        if (!cancelled) {
+          timer = setTimeout(poll, nextMs)
+        }
+      }
+    }
+
+    void poll()
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
     }
   }, [])
 
@@ -209,6 +244,12 @@ export default function PatientsPage() {
               />
             </div>
             <div className="flex gap-2 flex-wrap">
+              {modelSyncRunning && (
+                <Badge className="bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs sm:text-sm">
+                  <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 mr-1 animate-spin" />
+                  Model processing{modelSyncPending > 0 ? ` (${modelSyncPending})` : ''}
+                </Badge>
+              )}
               <Button
                 variant={riskFilter === 'all' ? 'default' : 'outline'}
                 onClick={() => setRiskFilter('all')}
@@ -471,7 +512,7 @@ export default function PatientsPage() {
                 className="scroll-mt-6"
                 aria-label="Migraine prediction analytics"
               >
-                <PatientAnalyticsPredictionPage embedded patientName={selectedPatient.name} />
+                <PatientAnalyticsPredictionPage embedded patientId={selectedPatient.id} patientName={selectedPatient.name} />
               </section>
 
               {/* Patient At-A-Glance Summary */}
