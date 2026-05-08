@@ -12,7 +12,7 @@
     "prepare": "node -e \"if(!process.env.CI){require('child_process').spawnSync('husky',{stdio:'inherit',shell:true})}\""
   },
   "dependencies": {
-    "@prisma/client": "^6.19.0",  
+    "@prisma/client": "^6.19.0",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-progress": "^1.1.8",
