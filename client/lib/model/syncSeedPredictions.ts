@@ -1,4 +1,5 @@
 import { MigraineTypeClassification, PrismaClient, RiskAlertLevel } from '@prisma/client'
+import { getModelApiBaseUrl } from '@/lib/env/modelApiUrl'
 
 type PredictResponse = {
   predicted_type: string[]
@@ -6,7 +7,6 @@ type PredictResponse = {
 }
 
 const SEED_MARKER = 'trainingData_seed'
-const DEFAULT_MODEL_URL = 'http://127.0.0.1:8000'
 
 const labelMap: Record<string, MigraineTypeClassification> = {
   'migraine without aura': MigraineTypeClassification.MIGRAINE_WITHOUT_AURA,
@@ -121,7 +121,7 @@ export async function syncSeedPredictionsFromModel(prisma: PrismaClient): Promis
     Type: row.studyType ?? '',
   }))
 
-  const modelBaseUrl = (process.env.MODEL_API_URL || DEFAULT_MODEL_URL).replace(/\/+$/, '')
+  const modelBaseUrl = getModelApiBaseUrl()
   const response = await fetch(`${modelBaseUrl}/predict`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

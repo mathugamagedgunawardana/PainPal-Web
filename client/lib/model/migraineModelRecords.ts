@@ -3,6 +3,8 @@
  * Column names match model/text training CSVs and /predict expectations.
  */
 
+import { tryGetModelApiBaseUrl } from '@/lib/env/modelApiUrl'
+
 export type ModelRecord = {
   Age: number
   Duration: number
@@ -208,10 +210,6 @@ export function migraineEventsToModelRecords(
   })
 }
 
-export function modelApiBaseUrl(): string {
-  return (process.env.MODEL_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
-}
-
 export type NextAttackApiResponse = {
   based_on_records?: number
   next_attack?: {
@@ -271,7 +269,14 @@ export async function fetchNextAttackPredictionWithReason(records: ModelRecord[]
   if (records.length === 0) {
     return { dto: null, unavailableReason: 'No episodes available to forecast from.' }
   }
-  const base = modelApiBaseUrl()
+  const base = tryGetModelApiBaseUrl()
+  if (!base) {
+    return {
+      dto: null,
+      unavailableReason:
+        'MODEL_API_URL is not set. Add it to the Next.js server environment (e.g. .env.local).',
+    }
+  }
   const paths = ['/predict/next-attack', '/predict_next_attack']
   let lastStatus: number | null = null
   let sawNetworkError = false

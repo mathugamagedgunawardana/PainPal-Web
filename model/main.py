@@ -11,9 +11,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 import joblib
 import numpy as np
 import pandas as pd
+
+_env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(_env_path)
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -205,6 +209,12 @@ def health():
     }
 
 
+@app.get("/api/health")
+def api_health():
+    """Tiny probe for scripts, proxies, or smoke tests (GET only)."""
+    return {"status": "ok", "service": "migraine-model-api"}
+
+
 @app.post("/predict/next-attack")
 def predict_next_attack_endpoint(req: PredictRequest):
     return predict_next_from_records(req.records)
@@ -296,4 +306,6 @@ async def pipeline_run_next(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    host = os.getenv("MODEL_SERVER_HOST", "0.0.0.0")
+    port = int(os.getenv("MODEL_SERVER_PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)
