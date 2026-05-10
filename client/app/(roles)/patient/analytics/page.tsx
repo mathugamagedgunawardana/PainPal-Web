@@ -24,6 +24,15 @@ import {
   CartesianGrid,
 } from 'recharts'
 
+type NextAttackDto = {
+  basedOnRecords?: number
+  predictedType?: string
+  duration?: number | null
+  frequency?: number | null
+  intensity?: number | null
+  symptomsLikely?: Array<{ name: string; probability?: number }>
+}
+
 type AnalyticsData = {
   summary: {
     episodesLast30Days: number
@@ -35,6 +44,14 @@ type AnalyticsData = {
   severityDistribution: { level: number; count: number; label: string }[]
   triggers: { name: string; count: number }[]
   totalEpisodes: number
+  nextAttack?: NextAttackDto | null
+  nextAttackUnavailableReason?: string | null
+  nextAttackDisclaimer?: string
+}
+
+function formatTypeLabel(raw: string): string {
+  if (!raw) return '—'
+  return raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 const COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#c084fc', '#d8b4fe', '#e9d5ff', '#f3e8ff']
@@ -139,6 +156,93 @@ export default function PatientAnalyticsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {data.nextAttackUnavailableReason && !data.nextAttack?.predictedType ? (
+        <Card className="border-slate-200 bg-slate-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center gap-2 text-slate-900">
+              <AlertCircle className="w-5 h-5 text-amber-600" />
+              Next migraine attack forecast
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-sm text-slate-700">{data.nextAttackUnavailableReason}</p>
+            <p className="text-xs text-slate-500">
+              Ask your care team to run training on the model server (<code className="rounded bg-slate-100 px-1">POST /pipeline/run-next</code>) if forecasts stay unavailable.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {data.nextAttack?.predictedType ? (
+        <Card className="border-amber-200 bg-amber-50/80">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center gap-2 text-amber-950">
+              <AlertCircle className="w-5 h-5" />
+              Your next attack (forecast)
+            </CardTitle>
+            <p className="text-sm text-amber-900/90 font-normal">
+              From your last {data.nextAttack.basedOnRecords ?? '—'} logged episode
+              {data.nextAttack.basedOnRecords === 1 ? '' : 's'}. For planning only—not medical advice.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+              <div className="rounded-lg bg-white border border-amber-100 p-3">
+                <p className="text-xs text-amber-800 font-medium uppercase">Likely type</p>
+                <p className="text-base font-semibold text-gray-900 mt-0.5">
+                  {formatTypeLabel(data.nextAttack.predictedType)}
+                </p>
+              </div>
+              {typeof data.nextAttack.duration === 'number' ? (
+                <div className="rounded-lg bg-white border border-amber-100 p-3">
+                  <p className="text-xs text-amber-800 font-medium uppercase">Est. hours</p>
+                  <p className="text-base font-semibold text-gray-900 mt-0.5">
+                    {data.nextAttack.duration.toFixed(1)}
+                  </p>
+                </div>
+              ) : null}
+              {typeof data.nextAttack.frequency === 'number' ? (
+                <div className="rounded-lg bg-white border border-amber-100 p-3">
+                  <p className="text-xs text-amber-800 font-medium uppercase">Est. frequency</p>
+                  <p className="text-base font-semibold text-gray-900 mt-0.5">
+                    {data.nextAttack.frequency.toFixed(1)}
+                  </p>
+                </div>
+              ) : null}
+              {typeof data.nextAttack.intensity === 'number' ? (
+                <div className="rounded-lg bg-white border border-amber-100 p-3">
+                  <p className="text-xs text-amber-800 font-medium uppercase">Est. intensity</p>
+                  <p className="text-base font-semibold text-gray-900 mt-0.5">
+                    {data.nextAttack.intensity.toFixed(1)}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+            {data.nextAttack.symptomsLikely && data.nextAttack.symptomsLikely.length > 0 ? (
+              <div>
+                <p className="text-xs font-medium text-amber-900 mb-1.5">Symptoms more likely next time</p>
+                <div className="flex flex-wrap gap-2">
+                  {data.nextAttack.symptomsLikely.slice(0, 12).map((s) => (
+                    <span
+                      key={s.name}
+                      className="px-2.5 py-1 text-xs rounded-full bg-white text-amber-950 border border-amber-200"
+                    >
+                      {s.name}
+                      {typeof s.probability === 'number'
+                        ? ` (${Math.round(s.probability * 100)}%)`
+                        : ''}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {data.nextAttackDisclaimer ? (
+              <p className="text-xs text-amber-900/75">{data.nextAttackDisclaimer}</p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {!hasEpisodes ? (
         <Card>

@@ -2,6 +2,44 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/middleware'
 import { getDoctorUserId } from '@/lib/auth/getDoctorUserId'
 import { prisma } from '@/lib/prisma'
+import {
+  fetchNextAttackPredictionWithReason,
+  migraineEventsToModelRecords,
+  type MigraineEventDbInput,
+} from '@/lib/model/migraineModelRecords'
+
+const MIGRAINE_EVENT_MODEL_SELECT = {
+  startDatetime: true,
+  duration: true,
+  detectedSymptoms: true,
+  migraineType: true,
+  csvMigraineType: true,
+  studyType: true,
+  trainingAge: true,
+  trainingDuration: true,
+  trainingFrequency: true,
+  trainingLocation: true,
+  trainingCharacter: true,
+  trainingIntensity: true,
+  severity: true,
+  nausea: true,
+  vomit: true,
+  phonophobia: true,
+  photophobia: true,
+  visual: true,
+  sensory: true,
+  dysphasia: true,
+  dysarthria: true,
+  vertigo: true,
+  tinnitus: true,
+  hypoacusis: true,
+  diplopia: true,
+  defect: true,
+  ataxia: true,
+  conscience: true,
+  paresthesia: true,
+  dpf: true,
+} as const
 
 const TYPE_LABELS: Record<string, string> = {
   MIGRAINE_WITHOUT_AURA: 'Migraine without aura',
@@ -110,7 +148,7 @@ export async function GET(
     if (!link) return NextResponse.json({ error: 'Patient not found or access denied' }, { status: 404 })
   }
 
-  const [recentInsights, typeCounts] = await Promise.all([
+  const [recentInsights, typeCounts, eventsChrono, patientProfile] = await Promise.all([
     prisma.aIDiagnosticInsight.findMany({
       where: { patientId, migraineType: { not: null } },
       orderBy: { createdDatetime: 'desc' },
@@ -121,71 +159,41 @@ export async function GET(
       where: { patientId, migraineType: { not: null } },
       _count: { _all: true },
     }),
+    prisma.migraineEvent.findMany({
+      where: { patientId },
+      orderBy: { startDatetime: 'asc' },
+      take: 120,
+      select: MIGRAINE_EVENT_MODEL_SELECT,
+    }),
+    prisma.patientProfile.findUnique({
+      where: { id: patientId },
+      select: { dob: true },
+    }),
   ])
+
+  if (!patientProfile) {
+    return NextResponse.json({ error: 'Patient profile not found' }, { status: 404 })
+  }
+
+  const patientDob = new Date(patientProfile.dob)
+  const recordsForNextAttack = migraineEventsToModelRecords(
+    eventsChrono as MigraineEventDbInput[],
+    patientDob
+  )
+  const nextAttackResult =
+    recordsForNextAttack.length > 0
+      ? await fetchNextAttackPredictionWithReason(recordsForNextAttack)
+      : { dto: null, unavailableReason: 'No migraine episodes on file for this patient.' as string | null }
+  const nextAttack = nextAttackResult.dto
+  const nextAttackUnavailableReason = nextAttackResult.unavailableReason
 
   // If there are no saved predictions yet, infer directly from this patient's seeded/training events.
   // This gives per-patient results immediately without waiting for background sync persistence.
   if (recentInsights.length === 0 && typeCounts.length === 0) {
-    const events = await prisma.migraineEvent.findMany({
-      where: { patientId },
-      orderBy: { startDatetime: 'desc' },
-      take: 120,
-      select: {
-        detectedSymptoms: true,
-        trainingAge: true,
-        trainingDuration: true,
-        trainingFrequency: true,
-        trainingLocation: true,
-        trainingCharacter: true,
-        trainingIntensity: true,
-        nausea: true,
-        vomit: true,
-        phonophobia: true,
-        photophobia: true,
-        visual: true,
-        sensory: true,
-        dysphasia: true,
-        dysarthria: true,
-        vertigo: true,
-        tinnitus: true,
-        hypoacusis: true,
-        diplopia: true,
-        defect: true,
-        ataxia: true,
-        conscience: true,
-        paresthesia: true,
-        dpf: true,
-        studyType: true,
-      },
-    })
+    const events = [...eventsChrono].reverse()
 
     if (events.length > 0) {
-      const records = events.map((e) => ({
-        Age: e.trainingAge ?? 0,
-        Duration: e.trainingDuration ?? 0,
-        Frequency: e.trainingFrequency ?? 0,
-        Location: e.trainingLocation ?? 0,
-        Character: e.trainingCharacter ?? 0,
-        Intensity: e.trainingIntensity ?? 0,
-        Nausea: e.nausea ?? 0,
-        Vomit: e.vomit ?? 0,
-        Phonophobia: e.phonophobia ?? 0,
-        Photophobia: e.photophobia ?? 0,
-        Visual: e.visual ?? 0,
-        Sensory: e.sensory ?? 0,
-        Dysphasia: e.dysphasia ?? 0,
-        Dysarthria: e.dysarthria ?? 0,
-        Vertigo: e.vertigo ?? 0,
-        Tinnitus: e.tinnitus ?? 0,
-        Hypoacusis: e.hypoacusis ?? 0,
-        Diplopia: e.diplopia ?? 0,
-        Defect: e.defect ?? 0,
-        Ataxia: e.ataxia ?? 0,
-        Conscience: e.conscience ?? 0,
-        Paresthesia: e.paresthesia ?? 0,
-        DPF: e.dpf ?? 0,
-        Type: e.studyType ?? '',
-      }))
+      const records = migraineEventsToModelRecords(events as MigraineEventDbInput[], patientDob)
 
       try {
         const modelBaseUrl = (process.env.MODEL_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
@@ -258,6 +266,10 @@ export async function GET(
             summary: top?.summary ?? 'No prediction available yet',
             keySymptoms: top?.keySymptoms ?? [],
             predictions: sorted,
+            nextAttack,
+            nextAttackUnavailableReason,
+            nextAttackDisclaimer:
+              'Forecasts are probabilistic and for decision support only—not a diagnosis or emergency guidance.',
           })
         }
       } catch (error) {
@@ -301,5 +313,9 @@ export async function GET(
     summary: top?.summary ?? 'No prediction available yet',
     keySymptoms: top?.keySymptoms ?? [],
     predictions: sorted,
+    nextAttack,
+    nextAttackUnavailableReason,
+    nextAttackDisclaimer:
+      'Forecasts are probabilistic and for decision support only—not a diagnosis or emergency guidance.',
   })
 }

@@ -452,7 +452,7 @@ export default function PatientsPage() {
                         </div>
                         <div className="flex items-center gap-2 text-gray-600">
                           <Calendar className="w-3 h-3 sm:w-4 sm:h-4 text-indigo-500 flex-shrink-0" />
-                          <span>Next: {selectedPatient.nextAppointment ?? '—'}</span>
+                          <span>Next appointment: {selectedPatient.nextAppointment ?? '—'}</span>
                         </div>
                       </div>
                     </div>

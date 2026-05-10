@@ -45,6 +45,16 @@ type MigraineTypePrediction = {
   };
 };
 
+type NextAttackPayload = {
+  basedOnRecords?: number;
+  predictedType?: string;
+  typeProbabilities?: Record<string, number>;
+  duration?: number | null;
+  frequency?: number | null;
+  intensity?: number | null;
+  symptomsLikely?: Array<{ name: string; probability?: number }>;
+};
+
 type AnalyticsPayload = {
   generatedAt?: string;
   source?: string;
@@ -53,7 +63,15 @@ type AnalyticsPayload = {
   summary?: string;
   keySymptoms?: string[];
   predictions?: MigraineTypePrediction[];
+  nextAttack?: NextAttackPayload | null;
+  nextAttackUnavailableReason?: string | null;
+  nextAttackDisclaimer?: string;
 };
+
+function formatModelTypeLabel(raw: string): string {
+  if (!raw) return "—";
+  return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 const FALLBACK_MIGRAINE_PREDICTIONS: MigraineTypePrediction[] = [
   {
@@ -829,7 +847,10 @@ export default function PatientAnalyticsPredictionPage({
       })
       .then((payload: AnalyticsPayload) => {
         if (cancelled) return;
-        if (Array.isArray(payload?.predictions) && payload.predictions.length > 0) {
+        const hasPredictions = Array.isArray(payload?.predictions) && payload.predictions.length > 0;
+        const hasNext = Boolean(payload?.nextAttack?.predictedType);
+        const hasNextHint = Boolean(payload?.nextAttackUnavailableReason?.trim());
+        if (hasPredictions || hasNext || hasNextHint) {
           setModelPayload(payload);
         }
       })
@@ -864,6 +885,9 @@ export default function PatientAnalyticsPredictionPage({
 
   const symptomShareData = topCategoryData.slice(0, 5);
 
+  const next = modelPayload?.nextAttack;
+  const nextTypeDisplay = next?.predictedType ? formatModelTypeLabel(next.predictedType) : null;
+
   return (
     <div className={embedded ? 'min-h-0' : 'min-h-screen bg-gray-50 p-4'}>
       <div className={embedded ? 'max-w-full mx-auto space-y-6' : 'max-w-7xl mx-auto space-y-6'}>
@@ -881,6 +905,77 @@ export default function PatientAnalyticsPredictionPage({
               : new Date().toLocaleString()}
           </div>
         </div>
+
+        {modelPayload && !next?.predictedType && modelPayload.nextAttackUnavailableReason ? (
+          <div className="bg-slate-50 rounded-lg border border-slate-200 p-5">
+            <div className="flex items-center gap-2 text-slate-800 mb-2">
+              <AlertCircle className="w-5 h-5 shrink-0 text-amber-600" />
+              <h2 className="text-lg font-semibold">Next migraine attack forecast</h2>
+            </div>
+            <p className="text-sm text-slate-700">{modelPayload.nextAttackUnavailableReason}</p>
+            <p className="text-xs text-slate-500 mt-3">
+              After the model API is updated: run{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px]">POST /pipeline/run-next</code> once to
+              train the bundle, then reload the page.
+            </p>
+          </div>
+        ) : null}
+
+        {next && nextTypeDisplay ? (
+          <div className="bg-amber-50 rounded-lg border border-amber-200 p-5">
+            <div className="flex items-center gap-2 text-amber-900 mb-2">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <h2 className="text-lg font-semibold">Forecast: next migraine attack</h2>
+            </div>
+            <p className="text-sm text-amber-950/90 mb-3">
+              Based on the patient&apos;s last {next.basedOnRecords ?? "—"} logged episode
+              {(next.basedOnRecords ?? 0) === 1 ? "" : "s"} (chronological history). Not a diagnosis.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+              <div className="rounded-md bg-white/80 border border-amber-100 px-3 py-2">
+                <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Likely type</p>
+                <p className="text-base font-semibold text-gray-900 mt-0.5">{nextTypeDisplay}</p>
+              </div>
+              {typeof next.duration === "number" ? (
+                <div className="rounded-md bg-white/80 border border-amber-100 px-3 py-2">
+                  <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Est. duration (h)</p>
+                  <p className="text-base font-semibold text-gray-900 mt-0.5">{next.duration.toFixed(1)}</p>
+                </div>
+              ) : null}
+              {typeof next.frequency === "number" ? (
+                <div className="rounded-md bg-white/80 border border-amber-100 px-3 py-2">
+                  <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Est. frequency</p>
+                  <p className="text-base font-semibold text-gray-900 mt-0.5">{next.frequency.toFixed(1)}</p>
+                </div>
+              ) : null}
+              {typeof next.intensity === "number" ? (
+                <div className="rounded-md bg-white/80 border border-amber-100 px-3 py-2">
+                  <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Est. intensity</p>
+                  <p className="text-base font-semibold text-gray-900 mt-0.5">{next.intensity.toFixed(1)}</p>
+                </div>
+              ) : null}
+            </div>
+            {next.symptomsLikely && next.symptomsLikely.length > 0 ? (
+              <div className="mt-3">
+                <p className="text-xs font-medium text-amber-900 mb-1.5">Symptoms more likely next time</p>
+                <div className="flex flex-wrap gap-2">
+                  {next.symptomsLikely.slice(0, 12).map((s) => (
+                    <span
+                      key={s.name}
+                      className="px-2.5 py-1 text-xs rounded-full bg-white text-amber-950 border border-amber-200"
+                    >
+                      {s.name}
+                      {typeof s.probability === "number" ? ` (${Math.round(s.probability * 100)}%)` : ""}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {modelPayload?.nextAttackDisclaimer ? (
+              <p className="text-xs text-amber-900/80 mt-3">{modelPayload.nextAttackDisclaimer}</p>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="bg-white rounded-lg border border-blue-200 p-5 lg:col-span-2">
