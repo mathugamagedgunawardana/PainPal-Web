@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -81,6 +82,7 @@ type NoteItem = { date: string; note: string; author: string }
 type CommunicationItem = { date: string; type: string; message: string; channel: string }
 
 export default function PatientsPage() {
+  const searchParams = useSearchParams()
   const [searchTerm, setSearchTerm] = useState('')
   const [riskFilter, setRiskFilter] = useState('all')
   const [patients, setPatients] = useState<PatientListItem[]>([])
@@ -207,6 +209,14 @@ export default function PatientsPage() {
         setDetailLoading(false)
       })
   }, [])
+
+  useEffect(() => {
+    const id = searchParams.get('patient')
+    if (!id || patients.length === 0) return
+    if (!patients.some((p) => p.id === id)) return
+    if (selectedPatient?.id === id) return
+    fetchPatientDetail(id)
+  }, [searchParams, patients, selectedPatient?.id, fetchPatientDetail])
 
   const handleSelectPatient = (patient: PatientListItem) => {
     if (selectedPatient?.id === patient.id) return
