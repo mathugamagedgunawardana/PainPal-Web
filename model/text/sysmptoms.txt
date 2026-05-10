@@ -1,0 +1,12 @@
+Migraine Type                | Explanation                              | Throb | Nausea | Photo | Phono | VisualAura | SensoryAura | Speech | Weakness | Vertigo | Tinnitus | MonoVisionLoss | >72h | Hormonal
+----------------------------|------------------------------------------|-------|--------|-------|-------|------------|-------------|--------|----------|---------|----------|----------------|------|----------
+Migraine_without_aura       | Common migraine without aura             | 90%   | 70%    | 80%   | 70%   | 0%         | 0%          | 0%     | 0%       | 10%     | 5%       | 0%             | 0%   | 0%
+Typical_aura_migraine       | Migraine with classic aura               | 90%   | 70%    | 80%   | 70%   | 90%        | 60%         | 30%    | 0%       | 10%     | 5%       | 0%             | 0%   | 0%
+Brainstem_aura_migraine     | Brainstem (basilar-type) aura            | 80%   | 60%    | 70%   | 60%   | 70%        | 20%         | 40%    | 0%       | 80%     | 50%      | 0%             | 0%   | 0%
+Hemiplegic_migraine         | Migraine with one-side paralysis         | 80%   | 60%    | 70%   | 60%   | 60%        | 50%         | 50%    | 90%      | 20%     | 10%      | 0%             | 0%   | 0%
+Retinal_migraine            | Vision loss in one eye                   | 70%   | 50%    | 60%   | 50%   | 50%        | 0%          | 0%     | 0%       | 10%     | 5%       | 90%            | 0%   | 0%
+Chronic_migraine            | ≥15 headache days per month              | 100%  | 80%    | 80%   | 70%   | 0%         | 0%          | 0%     | 0%       | 10%     | 5%       | 0%             | 0%   | 0%
+Menstrual_migraine          | Linked to menstrual cycle                | 90%   | 70%    | 70%   | 60%   | 0%         | 0%          | 0%     | 0%       | 10%     | 5%       | 0%             | 0%   | 100%
+Vestibular_migraine         | Vertigo/dizziness dominant               | 40%   | 60%    | 30%   | 20%   | 10%        | 10%         | 0%     | 0%       | 90%     | 10%      | 0%             | 0%   | 0%
+Status_migrainosus          | Severe migraine lasting >72h             | 100%  | 90%    | 90%   | 80%   | 20%        | 10%         | 5%     | 0%       | 20%     | 10%      | 0%             | 100% | 0%
+Probable_migraine           | Partial/atypical migraine                | 60%   | 30%    | 30%   | 20%   | 10%        | 10%         | 5%     | 0%       | 10%     | 5%       | 0%             | 0%   | 0%

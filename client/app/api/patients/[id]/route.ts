@@ -13,23 +13,56 @@ function severityLabel(severity: number): string {
   return 'Mild'
 }
 
-/** Parse symptomsLog JSON; may contain mostIntenseSymptoms, medicationsTakenDuringPeriod, notes */
-function parseSymptomsLog(symptomsLog: string | null): {
-  mostIntenseSymptoms: string[]
-  medicationsTakenDuringPeriod: string[]
-  notes?: string
-} {
-  const out = { mostIntenseSymptoms: [] as string[], medicationsTakenDuringPeriod: [] as string[], notes: undefined as string | undefined }
-  if (!symptomsLog?.trim()) return out
-  try {
-    const parsed = JSON.parse(symptomsLog) as Record<string, unknown>
-    if (Array.isArray(parsed.mostIntenseSymptoms)) out.mostIntenseSymptoms = parsed.mostIntenseSymptoms as string[]
-    if (Array.isArray(parsed.medicationsTakenDuringPeriod)) out.medicationsTakenDuringPeriod = parsed.medicationsTakenDuringPeriod as string[]
-    if (typeof parsed.notes === 'string') out.notes = parsed.notes
-  } catch {
-    // ignore
+function splitMedicationList(s: string | null | undefined): string[] {
+  if (!s?.trim()) return []
+  return s.split(',').map((x) => x.trim()).filter(Boolean)
+}
+
+type EventLike = { startDatetime: Date; severity: number }
+
+function computeMigraineStats(events: EventLike[]) {
+  if (!events.length) {
+    return { recentEpisodes: 0, migraineDays: 0, riskLevel: 'low' as const }
   }
-  return out
+
+  const latestEventDate = new Date(
+    Math.max(...events.map((e) => new Date(e.startDatetime).getTime()))
+  )
+  const rollingStart = new Date(latestEventDate)
+  rollingStart.setDate(rollingStart.getDate() - 30)
+
+  const recentWindow = events.filter((e) => {
+    const ts = new Date(e.startDatetime).getTime()
+    return ts >= rollingStart.getTime() && ts <= latestEventDate.getTime()
+  })
+
+  const migraineDaySet = new Set(
+    recentWindow
+      .filter((e) => {
+        const d = new Date(e.startDatetime)
+        return d.getUTCFullYear() === latestEventDate.getUTCFullYear()
+          && d.getUTCMonth() === latestEventDate.getUTCMonth()
+      })
+      .map((e) => new Date(e.startDatetime).toISOString().slice(0, 10))
+  )
+
+  const avgSeverity =
+    recentWindow.length > 0
+      ? recentWindow.reduce((sum, e) => sum + (e.severity ?? 0), 0) / recentWindow.length
+      : 0
+
+  const riskLevel =
+    recentWindow.length >= 8 || avgSeverity >= 7
+      ? 'high'
+      : recentWindow.length >= 4 || avgSeverity >= 5
+        ? 'medium'
+        : 'low'
+
+  return {
+    recentEpisodes: recentWindow.length,
+    migraineDays: migraineDaySet.size,
+    riskLevel,
+  }
 }
 
 /** GET /api/patients/[id] – single patient with full relations (for doctor detail view) */
@@ -100,13 +133,10 @@ export async function GET(
       }
 
       const now = new Date()
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
       const appointments = patient.appointments || []
       const nextAppt = appointments.find((a) => new Date(a.appointmentDate) >= now && a.status !== 'CANCELLED')
       const lastAppt = appointments.find((a) => a.status === 'COMPLETED')
-      const recentEpisodes = (patient.migraineEvents || []).filter((e) => new Date(e.startDatetime) >= thirtyDaysAgo).length
-      const riskLevel = recentEpisodes > 6 ? 'high' : recentEpisodes > 3 ? 'medium' : 'low'
+      const stats = computeMigraineStats(patient.migraineEvents || [])
       const groups = patient.medicationGroups || []
       const adherence =
         groups.length && groups.some((g) => g.adherenceRate != null)
@@ -126,18 +156,17 @@ export async function GET(
         phone: patient.phone ?? undefined,
         email: patient.email ?? undefined,
         address: patient.address ?? undefined,
-        riskLevel,
+        riskLevel: stats.riskLevel,
         lastVisit: lastAppt ? formatDate(lastAppt.appointmentDate) : undefined,
         nextAppointment: nextAppt ? formatDate(nextAppt.appointmentDate) : undefined,
-        migraineDays: recentEpisodes,
+        migraineDays: stats.migraineDays,
         adherence: adherence ?? undefined,
         triggers: [] as string[],
         currentMeds: currentMeds.slice(0, 10),
-        recentEpisodes,
+        recentEpisodes: stats.recentEpisodes,
       }
 
       const episodeHistory = (patient.migraineEvents || []).map((e) => {
-        const parsed = parseSymptomsLog(e.symptomsLog)
         const triggers = e.perceivedTriggers
           ? e.perceivedTriggers.split(',').map((s) => s.trim()).filter(Boolean)
           : []
@@ -146,9 +175,9 @@ export async function GET(
           severity: severityLabel(e.severity),
           duration: e.duration ?? '—',
           triggers,
-          mostIntenseSymptoms: parsed.mostIntenseSymptoms,
-          medicationsTakenDuringPeriod: parsed.medicationsTakenDuringPeriod,
-          notes: parsed.notes,
+          mostIntenseSymptoms: e.detectedSymptoms ?? [],
+          medicationsTakenDuringPeriod: splitMedicationList(e.medicationsDuringEpisode),
+          notes: e.episodeNotes ?? undefined,
         }
       })
 

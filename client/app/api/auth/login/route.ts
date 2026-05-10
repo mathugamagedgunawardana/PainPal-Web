@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { signToken, setAuthCookie } from '@/lib/auth/jwt';
 import { comparePassword } from '@/lib/auth/password';
+import { doctorProfileToMobile, patientProfileToMobile } from '@/lib/auth/mobileAuthResponse';
+import { triggerSeedPredictionSync } from '@/lib/model/syncSeedPredictions';
 
 async function getPrismaSafe() {
   if (!process.env.DATABASE_URL) {
@@ -54,26 +56,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Try hardcoded users (development). For DOCTOR, use seed doctor's DB id so /api/patients works.
+    // 1. Try hardcoded users (development).
+    // Map DOCTOR/PATIENT to seeded DB ids when Prisma is available so JWT userId is a real ObjectId
+    // and patient APIs (Bearer token) resolve PatientProfile correctly.
     const hardcoded = Object.values(HARDCODED_USERS).find(u => u.email === email);
     if (hardcoded && hardcoded.password === password) {
       let userId = hardcoded.userId;
       let name = hardcoded.name;
       let useEmail = hardcoded.email;
-      if (hardcoded.role === 'DOCTOR') {
-        const prisma = await getPrismaSafe();
-        if (prisma) {
-          const seedDoctor = await prisma.user.findUnique({
-            where: { email: 'dr.johnson@clinic.example.com' },
-            include: { doctorProfile: true },
-          });
-          if (seedDoctor?.doctorProfile) {
-            userId = seedDoctor.id;
-            name = seedDoctor.doctorProfile.name;
-            useEmail = seedDoctor.email;
-          }
+      let patientProfileJson: ReturnType<typeof patientProfileToMobile> | undefined;
+      let doctorProfileJson: ReturnType<typeof doctorProfileToMobile> | undefined;
+
+      const prisma = await getPrismaSafe();
+      if (prisma && hardcoded.role === 'DOCTOR') {
+        void triggerSeedPredictionSync(prisma);
+        const seedDoctor = await prisma.user.findUnique({
+          where: { email: 'dr.johnson@clinic.example.com' },
+          include: { doctorProfile: true },
+        });
+        if (seedDoctor?.doctorProfile) {
+          userId = seedDoctor.id;
+          name = seedDoctor.doctorProfile.name;
+          useEmail = seedDoctor.email;
+          doctorProfileJson = doctorProfileToMobile(seedDoctor.doctorProfile);
+        }
+      } else if (prisma && hardcoded.role === 'PATIENT') {
+        void triggerSeedPredictionSync(prisma);
+        const seedPatientUser = await prisma.user.findFirst({
+          where: { role: 'PATIENT' },
+          include: { patientProfile: true },
+          orderBy: { createdAt: 'asc' },
+        });
+        if (seedPatientUser?.patientProfile) {
+          userId = seedPatientUser.id;
+          name = seedPatientUser.patientProfile.name;
+          useEmail = seedPatientUser.email;
+          patientProfileJson = patientProfileToMobile(seedPatientUser.patientProfile);
         }
       }
+
       const token = await signToken({
         userId,
         email: useEmail,
@@ -91,6 +112,8 @@ export async function POST(request: NextRequest) {
             role: hardcoded.role,
             name,
           },
+          ...(patientProfileJson ? { patientProfile: patientProfileJson } : {}),
+          ...(doctorProfileJson ? { doctorProfile: doctorProfileJson } : {}),
         },
         { status: 200 }
       );
@@ -108,6 +131,9 @@ export async function POST(request: NextRequest) {
         })
       : null;
     if (dbUser && await comparePassword(password, dbUser.passwordHash)) {
+      if (prisma) {
+        void triggerSeedPredictionSync(prisma);
+      }
       const name =
         dbUser.doctorProfile?.name ??
         dbUser.patientProfile?.name ??
@@ -129,6 +155,12 @@ export async function POST(request: NextRequest) {
             role: dbUser.role,
             name,
           },
+          ...(dbUser.patientProfile
+            ? { patientProfile: patientProfileToMobile(dbUser.patientProfile) }
+            : {}),
+          ...(dbUser.doctorProfile
+            ? { doctorProfile: doctorProfileToMobile(dbUser.doctorProfile) }
+            : {}),
         },
         { status: 200 }
       );

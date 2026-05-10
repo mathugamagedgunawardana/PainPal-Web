@@ -7,6 +7,9 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
+    "seed": "prisma db seed",
+    "export:seed-csv": "node prisma/export-seed-training-csv.mjs",
     "prepare": "node -e \"if(!process.env.CI){require('child_process').spawnSync('husky',{stdio:'inherit',shell:true})}\""
   },
   "dependencies": {
@@ -48,7 +51,8 @@
     "tailwindcss": "^4.1.17",
     "ts-node": "^10.9.2",
     "tw-animate-css": "^1.4.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.5"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"

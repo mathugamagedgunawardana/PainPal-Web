@@ -5,6 +5,53 @@ import { prisma } from '@/lib/prisma'
 
 const DOCTOR_404 = { error: 'Doctor profile not found', message: 'Log in with a registered doctor account (e.g. dr.johnson@clinic.example.com / SeedPassword123!) to view patients.' } as const
 
+type EventLike = { startDatetime: Date; severity: number }
+
+function computeMigraineStats(events: EventLike[]) {
+  if (!events.length) {
+    return { recentEpisodes: 0, migraineDays: 0, riskLevel: 'low' as const }
+  }
+
+  const latestEventDate = new Date(
+    Math.max(...events.map((e) => new Date(e.startDatetime).getTime()))
+  )
+  const rollingStart = new Date(latestEventDate)
+  rollingStart.setDate(rollingStart.getDate() - 30)
+
+  const recentWindow = events.filter((e) => {
+    const ts = new Date(e.startDatetime).getTime()
+    return ts >= rollingStart.getTime() && ts <= latestEventDate.getTime()
+  })
+
+  const migraineDaySet = new Set(
+    recentWindow
+      .filter((e) => {
+        const d = new Date(e.startDatetime)
+        return d.getUTCFullYear() === latestEventDate.getUTCFullYear()
+          && d.getUTCMonth() === latestEventDate.getUTCMonth()
+      })
+      .map((e) => new Date(e.startDatetime).toISOString().slice(0, 10))
+  )
+
+  const avgSeverity =
+    recentWindow.length > 0
+      ? recentWindow.reduce((sum, e) => sum + (e.severity ?? 0), 0) / recentWindow.length
+      : 0
+
+  const riskLevel =
+    recentWindow.length >= 8 || avgSeverity >= 7
+      ? 'high'
+      : recentWindow.length >= 4 || avgSeverity >= 5
+        ? 'medium'
+        : 'low'
+
+  return {
+    recentEpisodes: recentWindow.length,
+    migraineDays: migraineDaySet.size,
+    riskLevel,
+  }
+}
+
 /** GET /api/patients – list patients linked to the current doctor (with computed list fields) */
 export async function GET(req: NextRequest) {
   const auth = await requireRole(req, ['ADMIN', 'DOCTOR'])
@@ -24,8 +71,6 @@ export async function GET(req: NextRequest) {
         return NextResponse.json(DOCTOR_404, { status: 404 })
       }
 
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
       const now = new Date()
 
       // MongoDB-compatible query: no orderBy/take inside nested include
@@ -38,7 +83,7 @@ export async function GET(req: NextRequest) {
           patient: {
             include: {
               appointments: { where: { doctorId: doctorProfile.id } },
-              migraineEvents: { where: { startDatetime: { gte: thirtyDaysAgo } } },
+              migraineEvents: { orderBy: { startDatetime: 'desc' }, take: 120 },
               medicationGroups: { where: { doctorId: doctorProfile.id, isActive: true } },
             },
           },
@@ -52,9 +97,7 @@ export async function GET(req: NextRequest) {
         )
         const nextAppt = appointments.find((a) => new Date(a.appointmentDate) >= now && a.status !== 'CANCELLED')
         const lastAppt = appointments.find((a) => a.status === 'COMPLETED')
-        const recentEpisodes = p.migraineEvents?.length ?? 0
-        const riskLevel =
-          recentEpisodes > 6 ? 'high' : recentEpisodes > 3 ? 'medium' : 'low'
+        const stats = computeMigraineStats(p.migraineEvents ?? [])
         const grps = p.medicationGroups ?? []
         const adherence =
           grps.length && grps.some((g) => g.adherenceRate != null)
@@ -74,14 +117,14 @@ export async function GET(req: NextRequest) {
           phone: p.phone ?? undefined,
           email: p.email ?? undefined,
           address: p.address ?? undefined,
-          riskLevel,
+          riskLevel: stats.riskLevel,
           lastVisit: lastAppt ? formatDate(lastAppt.appointmentDate) : undefined,
           nextAppointment: nextAppt ? formatDate(nextAppt.appointmentDate) : undefined,
-          migraineDays: recentEpisodes,
+          migraineDays: stats.migraineDays,
           adherence: adherence ?? undefined,
           triggers: [] as string[],
           currentMeds: currentMeds.slice(0, 5),
-          recentEpisodes,
+          recentEpisodes: stats.recentEpisodes,
         }
       })
 

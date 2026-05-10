@@ -4,11 +4,99 @@
  */
 import { PrismaClient } from '@prisma/client'
 import * as bcrypt from 'bcryptjs'
+import * as fs from 'fs'
+import * as path from 'path'
 
 const prisma = new PrismaClient()
 
 const SALT_ROUNDS = 10
 const SEED_PASSWORD = 'SeedPassword123!'
+const CSV_SEED_SOURCE = 'trainingData_seed'
+
+type TrainingAttackRow = Record<string, string>
+
+function withRowOverrides(
+  row: TrainingAttackRow,
+  overrides: Partial<Record<string, string>>
+): TrainingAttackRow {
+  const next: TrainingAttackRow = { ...row }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (typeof value === 'string') {
+      next[key] = value
+    }
+  }
+  return next
+}
+
+function diversifiedRowForSeedPatient(
+  patientNumber: number,
+  row: TrainingAttackRow,
+  rowIndex: number
+): TrainingAttackRow {
+  const alternating = rowIndex % 2 === 0 ? '1' : '0'
+
+  switch (patientNumber) {
+    // Sarah: aura-heavy profile
+    case 1:
+      return withRowOverrides(row, {
+        Visual: '1',
+        Sensory: '1',
+        Dysphasia: alternating,
+        Phonophobia: '1',
+        Photophobia: '1',
+        Vertigo: '0',
+        Tinnitus: '0',
+        Type: 'Migraine with aura',
+      })
+
+    // John: vestibular/brainstem-like profile
+    case 2:
+      return withRowOverrides(row, {
+        Visual: '0',
+        Sensory: '0',
+        Dysphasia: '0',
+        Vertigo: '1',
+        Tinnitus: '1',
+        Hypoacusis: alternating,
+        Diplopia: alternating,
+        Defect: '0',
+        Type: 'Vestibular migraine',
+      })
+
+    // Emily: hormonal/menstrual leaning profile
+    case 3:
+      return withRowOverrides(row, {
+        Visual: '0',
+        Sensory: '0',
+        Dysphasia: '0',
+        Vertigo: '0',
+        Tinnitus: '0',
+        Nausea: '1',
+        Vomit: alternating,
+        Frequency: '1',
+        Type: 'Menstrual migraine',
+      })
+
+    // Michael: chronic without aura profile
+    case 4:
+      return withRowOverrides(row, {
+        Visual: '0',
+        Sensory: '0',
+        Dysphasia: '0',
+        Vertigo: '0',
+        Tinnitus: '0',
+        Nausea: '1',
+        Photophobia: '1',
+        Phonophobia: '1',
+        Frequency: '1',
+        Duration: '1',
+        Type: 'Chronic migraine',
+      })
+
+    default:
+      return row
+  }
+}
 
 function yearsAgo(years: number): Date {
   const d = new Date()
@@ -18,6 +106,147 @@ function yearsAgo(years: number): Date {
 
 function parseDate(isoDate: string): Date {
   return new Date(isoDate + 'T12:00:00.000Z')
+}
+
+function readCsvRows(filePath: string): TrainingAttackRow[] {
+  const raw = fs.readFileSync(filePath, 'utf8').trim()
+  if (!raw) return []
+  const lines = raw.split(/\r?\n/).filter(Boolean)
+  if (lines.length < 2) return []
+
+  const headers = lines[0].split(',').map((h) => h.trim())
+  return lines.slice(1).map((line) => {
+    const values = line.split(',').map((v) => v.trim())
+    const row: TrainingAttackRow = {}
+    headers.forEach((h, i) => {
+      row[h] = values[i] ?? ''
+    })
+    return row
+  })
+}
+
+function toInt(v: string | undefined): number {
+  const n = Number(v ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+function buildSymptomsAndTriggers(row: TrainingAttackRow) {
+  const symptomSignals: Array<[key: string, label: string]> = [
+    ['Nausea', 'Nausea'],
+    ['Vomit', 'Vomiting'],
+    ['Phonophobia', 'Phonophobia'],
+    ['Photophobia', 'Photophobia'],
+    ['Visual', 'Visual aura'],
+    ['Sensory', 'Sensory aura'],
+    ['Dysphasia', 'Speech difficulty'],
+    ['Dysarthria', 'Slurred speech'],
+    ['Vertigo', 'Vertigo'],
+    ['Tinnitus', 'Tinnitus'],
+    ['Hypoacusis', 'Hearing changes'],
+    ['Diplopia', 'Double vision'],
+    ['Defect', 'Visual field defect'],
+    ['Ataxia', 'Loss of balance'],
+    ['Conscience', 'Consciousness changes'],
+    ['Paresthesia', 'Paresthesia'],
+  ]
+
+  const detectedSymptoms = symptomSignals
+    .filter(([key]) => toInt(row[key]) > 0)
+    .map(([, label]) => label)
+
+  const triggers: string[] = []
+  if (toInt(row.Frequency) > 0) triggers.push('Stress')
+  if (toInt(row.Duration) > 0) triggers.push('Sleep disruption')
+  if (toInt(row.Photophobia) > 0) triggers.push('Bright lights')
+  if (toInt(row.Phonophobia) > 0) triggers.push('Loud noise')
+  if (toInt(row.Vertigo) > 0) triggers.push('Motion')
+  if (toInt(row.DPF) > 0) triggers.push('Dietary pattern')
+
+  return { detectedSymptoms, triggers: Array.from(new Set(triggers)) }
+}
+
+function deriveSeverity(row: TrainingAttackRow): number {
+  const intensity = toInt(row.Intensity)
+  const frequency = toInt(row.Frequency)
+  const auraCount = ['Visual', 'Sensory', 'Dysphasia', 'Vertigo'].reduce(
+    (acc, key) => acc + toInt(row[key]),
+    0
+  )
+  const raw = 3 + intensity * 4 + frequency * 2 + Math.min(2, auraCount)
+  return Math.max(1, Math.min(10, raw))
+}
+
+function deriveDurationText(row: TrainingAttackRow): string {
+  return toInt(row.Duration) > 0 ? '6 hours' : '2 hours'
+}
+
+function deriveEffectiveness(row: TrainingAttackRow): 'LOW' | 'MODERATE' | 'HIGH' {
+  const intensity = toInt(row.Intensity)
+  const frequency = toInt(row.Frequency)
+  if (intensity === 1 && frequency === 1) return 'LOW'
+  if (intensity === 0 && frequency === 0) return 'HIGH'
+  return 'MODERATE'
+}
+
+/** Maps CSV row fields onto MigraineEvent training columns */
+function trainingFieldsFromRow(row: TrainingAttackRow, rowIndex: number) {
+  const attackRaw = row.attack_id?.trim()
+  const attackNum = attackRaw !== undefined && attackRaw !== '' ? Number.parseInt(attackRaw, 10) : NaN
+  return {
+    csvPatientId: row.patient_id?.trim() || null,
+    csvAttackId: Number.isFinite(attackNum) ? attackNum : rowIndex + 1,
+    trainingAge: toInt(row.Age),
+    trainingDuration: toInt(row.Duration),
+    trainingFrequency: toInt(row.Frequency),
+    trainingLocation: toInt(row.Location),
+    trainingCharacter: toInt(row.Character),
+    trainingIntensity: toInt(row.Intensity),
+    nausea: toInt(row.Nausea),
+    vomit: toInt(row.Vomit),
+    phonophobia: toInt(row.Phonophobia),
+    photophobia: toInt(row.Photophobia),
+    visual: toInt(row.Visual),
+    sensory: toInt(row.Sensory),
+    dysphasia: toInt(row.Dysphasia),
+    dysarthria: toInt(row.Dysarthria),
+    vertigo: toInt(row.Vertigo),
+    tinnitus: toInt(row.Tinnitus),
+    hypoacusis: toInt(row.Hypoacusis),
+    diplopia: toInt(row.Diplopia),
+    defect: toInt(row.Defect),
+    ataxia: toInt(row.Ataxia),
+    conscience: toInt(row.Conscience),
+    paresthesia: toInt(row.Paresthesia),
+    dpf: toInt(row.DPF),
+    studyType: row.Type?.trim() || null,
+    csvMigraineType: row.MigraineType?.trim() || null,
+  }
+}
+
+/** Remove prior CSV-seeded events: new rows use csvImportMarker; legacy rows stored JSON in symptomsLog */
+async function deleteCsvSeededEventsForPatient(profileId: string) {
+  await prisma.migraineEvent.deleteMany({
+    where: {
+      patientId: profileId,
+      csvImportMarker: CSV_SEED_SOURCE,
+    },
+  })
+  const url = process.env.DATABASE_URL
+  if (!url) return
+  const { MongoClient, ObjectId } = await import('mongodb')
+  const client = new MongoClient(url)
+  try {
+    await client.connect()
+    const db = client.db()
+    await db.collection('MigraineEvent').deleteMany({
+      patientId: new ObjectId(profileId),
+      symptomsLog: { $regex: CSV_SEED_SOURCE },
+    })
+  } catch (e) {
+    console.warn('Legacy CSV seed cleanup (symptomsLog) skipped:', e)
+  } finally {
+    await client.close()
+  }
 }
 
 async function main() {
@@ -202,75 +431,7 @@ async function main() {
   })
   console.log('Created medication groups for first patient')
 
-  // 6. Migraine events (episode history) for first patient – from previous mock
-  const episodes = [
-    {
-      date: '2024-12-15',
-      severity: 8, // Severe
-      duration: '6 hours',
-      triggers: 'Stress, Sleep',
-      symptomsLog: JSON.stringify({
-        mostIntenseSymptoms: ['Throbbing pain (R temple)', 'Nausea', 'Photophobia', 'Phonophobia'],
-        medicationsTakenDuringPeriod: ['Sumatriptan 50mg', 'Topiramate 25mg', 'Ibuprofen 400mg'],
-        notes: 'Pain peaked at hour 2. Sumatriptan taken at onset.',
-      }),
-      effectiveness: 'LOW' as const,
-      medicationGroupId: medGroup1.id,
-    },
-    {
-      date: '2024-12-10',
-      severity: 5,
-      duration: '4 hours',
-      triggers: 'Weather',
-      symptomsLog: JSON.stringify({
-        mostIntenseSymptoms: ['Pressure pain (bilateral)', 'Light sensitivity'],
-        medicationsTakenDuringPeriod: ['Sumatriptan 50mg', 'Topiramate 25mg'],
-      }),
-      effectiveness: 'MODERATE' as const,
-      medicationGroupId: medGroup1.id,
-    },
-    {
-      date: '2024-12-05',
-      severity: 2,
-      duration: '2 hours',
-      triggers: 'Caffeine',
-      symptomsLog: JSON.stringify({
-        mostIntenseSymptoms: ['Mild throbbing', 'Tiredness'],
-        medicationsTakenDuringPeriod: ['Ibuprofen 400mg'],
-      }),
-      effectiveness: 'HIGH' as const,
-      medicationGroupId: medGroup3.id,
-    },
-    {
-      date: '2024-11-28',
-      severity: 9,
-      duration: '8 hours',
-      triggers: 'Stress, Bright Lights',
-      symptomsLog: JSON.stringify({
-        mostIntenseSymptoms: ['Severe throbbing', 'Nausea', 'Vomiting', 'Visual aura', 'Photophobia'],
-        medicationsTakenDuringPeriod: ['Sumatriptan 100mg', 'Topiramate 25mg', 'Metoclopramide 10mg'],
-        notes: 'Aura preceded headache by ~20 min.',
-      }),
-      effectiveness: 'LOW' as const,
-      medicationGroupId: medGroup1.id,
-    },
-  ]
-
-  for (const ep of episodes) {
-    await prisma.migraineEvent.create({
-      data: {
-        patientId: patient1Id,
-        startDatetime: parseDate(ep.date),
-        severity: ep.severity,
-        duration: ep.duration,
-        perceivedTriggers: ep.triggers,
-        symptomsLog: ep.symptomsLog,
-        medicationGroupId: ep.medicationGroupId,
-        effectiveness: ep.effectiveness,
-      },
-    })
-  }
-  console.log('Created migraine events (episode history) for first patient')
+  // 6. Migraine events now come from CSV import below.
 
   // 7. Medication logs for first patient
   const medLogs = [
@@ -346,6 +507,58 @@ async function main() {
     })
   }
   console.log('Created communications for first patient')
+
+  // 11. Import CSV attack rows from model/text/Data/traningData for seeded patients 1..4
+  const trainingDataDir = path.resolve(__dirname, '..', '..', 'model', 'text', 'Data', 'traningData')
+  const csvPatientMap = [
+    { patientNumber: 1, profileId: patients[0]?.profileId }, // Sarah
+    { patientNumber: 2, profileId: patients[1]?.profileId }, // John
+    { patientNumber: 3, profileId: patients[2]?.profileId }, // Emily
+    { patientNumber: 4, profileId: patients[3]?.profileId }, // Michael
+  ].filter((item): item is { patientNumber: number; profileId: string } => !!item.profileId)
+
+  if (fs.existsSync(trainingDataDir)) {
+    const baseDate = new Date('2025-01-01T08:00:00.000Z')
+
+    for (const item of csvPatientMap) {
+      const csvPath = path.join(trainingDataDir, `patient_${item.patientNumber}_migraine_attacks.csv`)
+      if (!fs.existsSync(csvPath)) {
+        console.warn(`CSV file missing for patient_${item.patientNumber}: ${csvPath}`)
+        continue
+      }
+
+      const rows = readCsvRows(csvPath)
+      if (!rows.length) continue
+
+      await deleteCsvSeededEventsForPatient(item.profileId)
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = diversifiedRowForSeedPatient(item.patientNumber, rows[i], i)
+        const { detectedSymptoms, triggers } = buildSymptomsAndTriggers(row)
+
+        const eventDate = new Date(baseDate)
+        eventDate.setUTCDate(baseDate.getUTCDate() - i - (item.patientNumber - 1) * 45)
+
+        await prisma.migraineEvent.create({
+          data: {
+            patientId: item.profileId,
+            startDatetime: eventDate,
+            severity: deriveSeverity(row),
+            duration: deriveDurationText(row),
+            perceivedTriggers: triggers.join(', '),
+            detectedSymptoms,
+            effectiveness: deriveEffectiveness(row),
+            csvImportMarker: CSV_SEED_SOURCE,
+            ...trainingFieldsFromRow(row, i),
+          },
+        })
+      }
+    }
+
+    console.log('Imported CSV symptom rows from traningData for seeded patients 1..4')
+  } else {
+    console.warn(`Training data directory not found: ${trainingDataDir}`)
+  }
 
   console.log('\nSeed completed. Doctor patients list and first patient detail will show data from MongoDB.')
   console.log('Doctor login email:', doctorUser.email, '(use your auth flow; seed password:', SEED_PASSWORD + ')')

@@ -26,7 +26,11 @@ import {
   Shield,
   CheckCircle,
   AlertCircle,
-  Download
+  Download,
+  Loader2,
+  PanelLeft,
+  PanelLeftClose,
+  Users,
 } from 'lucide-react'
 import { EpisodeHistoryTab } from '@/components/doctor/EpisodeHistoryTab'
 import { MedicationsTab } from '@/components/doctor/MedicationsTab'
@@ -36,6 +40,10 @@ import { ReportsTab } from '@/components/doctor/ReportsTab'
 import { CommunicationTab } from '@/components/doctor/CommunicationTab'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { FloatingChatIcon } from '@/components/chat/FloatingChatIcon'
+import PatientAnalyticsPredictionPage from '@/components/doctor/PatientAnalyticsPredictionPage'
+import { cn } from '@/lib/utils'
+
+const DOCTOR_PATIENTS_LIST_COLLAPSED_KEY = 'doctor-patients-list-collapsed'
 
 export type PatientListItem = {
   id: string
@@ -89,6 +97,61 @@ export default function PatientsPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
+  const [patientListCollapsed, setPatientListCollapsed] = useState(false)
+  const [modelSyncRunning, setModelSyncRunning] = useState(false)
+  const [modelSyncPending, setModelSyncPending] = useState(0)
+
+  useEffect(() => {
+    try {
+      setPatientListCollapsed(localStorage.getItem(DOCTOR_PATIENTS_LIST_COLLAPSED_KEY) === '1')
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const poll = async () => {
+      let nextMs = 10000
+      try {
+        const res = await fetch('/api/model/sync-status', { credentials: 'include', cache: 'no-store' })
+        if (!res.ok) return
+        const data = (await res.json()) as { running?: boolean; pendingSeedEvents?: number }
+        const running = Boolean(data.running)
+        nextMs = running ? 2500 : 10000
+        if (!cancelled) {
+          setModelSyncRunning(running)
+          setModelSyncPending(typeof data.pendingSeedEvents === 'number' ? data.pendingSeedEvents : 0)
+        }
+      } catch {
+        // Ignore transient polling errors in UI.
+      } finally {
+        if (!cancelled) {
+          timer = setTimeout(poll, nextMs)
+        }
+      }
+    }
+
+    void poll()
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [])
+
+  const togglePatientListCollapsed = useCallback(() => {
+    setPatientListCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem(DOCTOR_PATIENTS_LIST_COLLAPSED_KEY, next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -168,7 +231,7 @@ export default function PatientsPage() {
       <div className="max-w-[1920px] mx-auto space-y-4 sm:space-y-6">
         {/* Search and Filters */}
         <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
-          <CardContent className="p-4 sm:p-6">
+          <CardContent className=" sm:p-6">
             <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -181,6 +244,12 @@ export default function PatientsPage() {
               />
             </div>
             <div className="flex gap-2 flex-wrap">
+              {modelSyncRunning && (
+                <Badge className="bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs sm:text-sm">
+                  <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 mr-1 animate-spin" />
+                  Model processing{modelSyncPending > 0 ? ` (${modelSyncPending})` : ''}
+                </Badge>
+              )}
               <Button
                 variant={riskFilter === 'all' ? 'default' : 'outline'}
                 onClick={() => setRiskFilter('all')}
@@ -215,12 +284,61 @@ export default function PatientsPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] xl:grid-cols-[320px_1fr] gap-4 sm:gap-6">
-        {/* Patient List */}
-        <div className="space-y-3 sm:space-y-4">
-          <div className="flex items-center justify-between">
+      <div
+        className={cn(
+          'grid gap-4 sm:gap-6',
+          patientListCollapsed
+            ? 'grid-cols-1 lg:grid-cols-[52px_1fr]'
+            : 'grid-cols-1 lg:grid-cols-[280px_1fr] xl:grid-cols-[320px_1fr]'
+        )}
+      >
+        {/* Patient list column: narrow rail when collapsed (desktop only) */}
+        <div className="min-w-0 flex flex-col gap-3 lg:gap-0">
+          {patientListCollapsed && (
+            <div className="hidden lg:flex flex-col items-center gap-3 sticky top-4 self-start w-full max-h-[calc(100vh-10rem)] rounded-xl border border-gray-200 bg-white/90 shadow-sm py-3 px-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0 rounded-lg border-purple-200 text-purple-700 hover:bg-purple-50"
+                onClick={togglePatientListCollapsed}
+                aria-label="Expand patient list"
+                title="Show patient list"
+              >
+                <PanelLeft className="h-5 w-5" />
+              </Button>
+              <Users className="h-5 w-5 text-purple-600 shrink-0" aria-hidden />
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-semibold tabular-nums">
+                {filteredPatients.length}
+              </Badge>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 [writing-mode:vertical-rl] rotate-180 select-none">
+                Patients
+              </span>
+            </div>
+          )}
+
+          <div className={cn('space-y-3 sm:space-y-4', patientListCollapsed && 'lg:hidden')}>
+          <div className="flex items-center justify-between gap-2">
             <h2 className="text-base sm:text-xl font-bold text-gray-800">Patients ({filteredPatients.length})</h2>
-            <Badge variant="secondary" className="text-xs sm:text-sm">{filteredPatients.length} Total</Badge>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge variant="secondary" className="text-xs sm:text-sm">{filteredPatients.length} Total</Badge>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="hidden lg:inline-flex rounded-lg border-gray-200 text-gray-600 hover:bg-gray-100"
+                onClick={togglePatientListCollapsed}
+                aria-expanded={!patientListCollapsed}
+                aria-label={patientListCollapsed ? 'Expand patient list' : 'Collapse patient list'}
+                title={patientListCollapsed ? 'Expand patient list' : 'Collapse patient list'}
+              >
+                {patientListCollapsed ? (
+                  <PanelLeft className="h-5 w-5" />
+                ) : (
+                  <PanelLeftClose className="h-5 w-5" />
+                )}
+              </Button>
+            </div>
           </div>
           <div className="space-y-2 max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-300px)] overflow-y-auto pr-1 sm:pr-2">
             {patientsError && (
@@ -275,12 +393,13 @@ export default function PatientsPage() {
               </Card>
             ))}
           </div>
+          </div>
         </div>
 
         {/* Patient Profile Details */}
         <div className="w-full min-w-0">
           {selectedPatient ? (
-            <div className="space-y-4 sm:space-y-6 max-h-[calc(100vh-180px)] sm:max-h-[calc(100vh-200px)] overflow-y-auto pr-1 sm:pr-2">
+            <div className="space-y-4 sm:space-y-6 pr-1 sm:pr-2">
               {detailLoading && (
                 <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
                   <CardContent className="p-6 text-center text-gray-500">
@@ -312,16 +431,6 @@ export default function PatientsPage() {
                           <p className="text-sm sm:text-base text-gray-600 font-medium mt-1">{selectedPatient.condition}</p>
                         </div>
                         <div className="flex gap-2 flex-wrap">
-                          <Button 
-                            variant="default" 
-                            size="sm" 
-                            className="rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-xs sm:text-sm"
-                            onClick={() => window.location.href = '/doctor/patients/analytics'}
-                          >
-                            <Activity className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-                            <span className="hidden sm:inline">View Analytics</span>
-                            <span className="sm:hidden">Analytics</span>
-                          </Button>
                           <Button variant="outline" size="sm" className="rounded-xl text-xs sm:text-sm">
                             <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                             Edit
@@ -343,7 +452,7 @@ export default function PatientsPage() {
                         </div>
                         <div className="flex items-center gap-2 text-gray-600">
                           <Calendar className="w-3 h-3 sm:w-4 sm:h-4 text-indigo-500 flex-shrink-0" />
-                          <span>Next: {selectedPatient.nextAppointment ?? '—'}</span>
+                          <span>Next appointment: {selectedPatient.nextAppointment ?? '—'}</span>
                         </div>
                       </div>
                     </div>
@@ -397,6 +506,14 @@ export default function PatientsPage() {
                   </CardContent>
                 </Card>
               </div>
+
+              <section
+                id="patient-migraine-analytics"
+                className="scroll-mt-6"
+                aria-label="Migraine prediction analytics"
+              >
+                <PatientAnalyticsPredictionPage embedded patientId={selectedPatient.id} patientName={selectedPatient.name} />
+              </section>
 
               {/* Patient At-A-Glance Summary */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
@@ -483,67 +600,72 @@ export default function PatientsPage() {
               {/* Detailed Tabs */}
               <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
                 <CardContent className="p-4 sm:p-6">
-                  <Tabs defaultValue="history" className="w-full">
-                    <TabsList className="mb-4 sm:mb-6 bg-gray-100 p-1 rounded-xl flex flex-wrap w-full justify-start">
-                      <TabsTrigger value="history" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden xs:inline">Episode History</span>
-                        <span className="xs:hidden">History</span>
+                  <Tabs defaultValue="clinical" className="w-full">
+                    <TabsList className="mb-4 sm:mb-6 bg-gray-100 p-1 rounded-xl flex flex-wrap w-full justify-start gap-1">
+                      <TabsTrigger value="clinical" className="rounded-lg flex items-center gap-1.5 text-xs sm:text-sm px-3 sm:px-4">
+                        <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
+                        <Pill className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
+                        <span className="hidden sm:inline">History & medications</span>
+                        <span className="sm:hidden">History & meds</span>
                       </TabsTrigger>
-                      <TabsTrigger value="medications" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <Pill className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden xs:inline">Medications</span>
-                        <span className="xs:hidden">Meds</span>
-                      </TabsTrigger>
-                      <TabsTrigger value="appointments" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden xs:inline">Appointments</span>
-                        <span className="xs:hidden">Appts</span>
-                      </TabsTrigger>
-                      <TabsTrigger value="notes" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
-                        Notes
-                      </TabsTrigger>
-                      <TabsTrigger value="reports" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <Download className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden xs:inline">Reports</span>
-                        <span className="xs:hidden">Files</span>
-                      </TabsTrigger>
-                      <TabsTrigger value="communication" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden xs:inline">Communication</span>
-                        <span className="xs:hidden">Comm</span>
+                      <TabsTrigger value="care" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-3 sm:px-4">
+                        <Calendar className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
+                        <span className="hidden sm:inline">Appointments, notes & more</span>
+                        <span className="sm:hidden">More</span>
                       </TabsTrigger>
                     </TabsList>
 
-                    {/* Episode History */}
-                    <TabsContent value="history">
-                      <EpisodeHistoryTab episodeHistory={episodeHistory} />
+                    <TabsContent value="clinical" className="space-y-8 mt-0">
+                      <section aria-labelledby="patient-episode-history-heading">
+                        <h3 id="patient-episode-history-heading" className="sr-only">
+                          Migraine episode history
+                        </h3>
+                        <EpisodeHistoryTab episodeHistory={episodeHistory} />
+                      </section>
+                      <section aria-labelledby="patient-medications-heading">
+                        <h3 id="patient-medications-heading" className="sr-only">
+                          Medications
+                        </h3>
+                        <MedicationsTab medications={medications} />
+                      </section>
                     </TabsContent>
 
-                    {/* Medications */}
-                    <TabsContent value="medications">
-                      <MedicationsTab medications={medications} />
-                    </TabsContent>
-
-                    {/* Reports & Files */}
-                    <TabsContent value="reports">
-                      <ReportsTab />
-                    </TabsContent>
-
-                    {/* Appointments */}
-                    <TabsContent value="appointments">
-                      <AppointmentsTab appointments={appointments} />
-                    </TabsContent>
-
-                    {/* Clinical Notes */}
-                    <TabsContent value="notes">
-                      <NotesTab notes={notes} />
-                    </TabsContent>
-
-                    {/* Communication Log */}
-                    <TabsContent value="communication">
-                      <CommunicationTab communications={communications} />
+                    <TabsContent value="care" className="mt-0">
+                      <Tabs defaultValue="appointments" className="w-full">
+                        <TabsList className="mb-4 bg-gray-50 border border-gray-200 p-1 rounded-lg flex flex-wrap w-full justify-start gap-0.5">
+                          <TabsTrigger value="appointments" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
+                            <Calendar className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
+                            <span className="hidden xs:inline">Appointments</span>
+                            <span className="xs:hidden">Appts</span>
+                          </TabsTrigger>
+                          <TabsTrigger value="notes" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
+                            <FileText className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
+                            Notes
+                          </TabsTrigger>
+                          <TabsTrigger value="reports" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
+                            <Download className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
+                            <span className="hidden xs:inline">Reports</span>
+                            <span className="xs:hidden">Files</span>
+                          </TabsTrigger>
+                          <TabsTrigger value="communication" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
+                            <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
+                            <span className="hidden xs:inline">Communication</span>
+                            <span className="xs:hidden">Comm</span>
+                          </TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="appointments">
+                          <AppointmentsTab appointments={appointments} />
+                        </TabsContent>
+                        <TabsContent value="notes">
+                          <NotesTab notes={notes} />
+                        </TabsContent>
+                        <TabsContent value="reports">
+                          <ReportsTab />
+                        </TabsContent>
+                        <TabsContent value="communication">
+                          <CommunicationTab communications={communications} />
+                        </TabsContent>
+                      </Tabs>
                     </TabsContent>
                   </Tabs>
                 </CardContent>
@@ -556,7 +678,7 @@ export default function PatientsPage() {
                   <Activity className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 text-purple-600" />
                 </div>
                 <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2 sm:mb-3">Select a Patient</h3>
-                <p className="text-sm sm:text-base text-gray-600 max-w-md mx-auto px-4">Choose a patient from the list to view their complete profile, medical history, and analytics dashboard</p>
+                <p className="text-sm sm:text-base text-gray-600 max-w-md mx-auto px-4">Choose a patient from the list to view their complete profile, medical history, and migraine prediction analytics on the same page.</p>
               </CardContent>
             </Card>
           )}

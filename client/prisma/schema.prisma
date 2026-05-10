@@ -88,6 +88,24 @@ model PatientProfile {
   clinicalNotes   ClinicalNote[]
   communications  Communication[]
   conversations   Conversation[]
+  patientMriScans PatientMriScan[]
+}
+
+/// Brain MRI uploads from the Painpal mobile app (metadata only; wire object storage for DICOM in production).
+model PatientMriScan {
+  id               String         @id @default(auto()) @map("_id") @db.ObjectId
+  patientId        String         @db.ObjectId
+  patient          PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  originalFileName String
+  mimeType         String?
+  fileSizeBytes    Int?
+
+  prediction       String
+  confidence       Float
+  modelLabel       String?
+
+  createdAt        DateTime       @default(now())
 }
 
 // ----------------------------------------------
@@ -118,7 +136,43 @@ model MigraineEvent {
   startDatetime      DateTime
   severity           Int            // 1-10 scale
   duration           String?        // e.g., "6 hours", "4 hours"
-  symptomsLog        String         // Could be JSON string for detailed symptoms
+  /** Free text and med list for doctor UI (replaces former symptomsLog JSON) */
+  episodeNotes              String?
+  medicationsDuringEpisode  String?  // comma-separated medication names
+  detectedSymptoms   String[]       // Normalized symptom labels used by model/rules (e.g., ["Photophobia", "Vertigo"])
+
+  // Training CSV columns (patient_*_migraine_attacks.csv); optional for hand-entered events
+  csvPatientId       String?
+  csvAttackId        Int?
+  trainingAge        Int?
+  trainingDuration   Int?
+  trainingFrequency  Int?
+  trainingLocation   Int?
+  trainingCharacter  Int?
+  trainingIntensity  Int?
+  nausea             Int?
+  vomit              Int?
+  phonophobia        Int?
+  photophobia        Int?
+  visual             Int?
+  sensory            Int?
+  dysphasia          Int?
+  dysarthria         Int?
+  vertigo            Int?
+  tinnitus           Int?
+  hypoacusis         Int?
+  diplopia           Int?
+  defect             Int?
+  ataxia             Int?
+  conscience         Int?
+  paresthesia        Int?
+  dpf                Int?
+  studyType          String?        // CSV "Type"
+  csvMigraineType    String?        // CSV "MigraineType" when present
+  /** Set for CSV-imported rows so seed can replace them idempotently */
+  csvImportMarker    String?
+  migraineType       MigraineTypeClassification? // Clinician/model migraine type for this event
+  migraineTypeConfidence Float?     // 0-100 confidence for migraineType
   perceivedTriggers  String?        // Patient-reported triggers (comma-separated or JSON)
   
   // Medication Group & Effectiveness Tracking
@@ -178,9 +232,14 @@ model AIDiagnosticInsight {
   patient                PatientProfile @relation(fields: [patientId], references: [id])
   
   createdDatetime        DateTime       @default(now())
+  migraineType           MigraineTypeClassification? // Predicted migraine subtype
+  migraineTypeConfidence Float?         // 0-100 confidence score for migraine type
   diagnosticProbability  Float?         // 
   riskAlertLevel         RiskAlertLevel // 
   keyContributors        String[]       // e.g., ["Weather", "Sleep", "Stress"]
+  detectedSymptoms       String[]       // Structured symptoms used by inference pipeline
+  modelName              String?        // e.g., "xgboost"
+  modelVersion           String?        // e.g., "xgb-v1.2.0"
 } 
 
 // Doctor appointment with patient
@@ -331,4 +390,17 @@ enum MedicationEffectiveness {
 enum ChatSenderRole {
   DOCTOR
   PATIENT
+}
+
+enum MigraineTypeClassification {
+  MIGRAINE_WITHOUT_AURA
+  MIGRAINE_WITH_AURA
+  BRAINSTEM_AURA_MIGRAINE
+  HEMIPLEGIC_MIGRAINE
+  RETINAL_MIGRAINE
+  CHRONIC_MIGRAINE
+  MENSTRUAL_MIGRAINE
+  VESTIBULAR_MIGRAINE
+  STATUS_MIGRAINOSUS
+  PROBABLE_MIGRAINE
 }
