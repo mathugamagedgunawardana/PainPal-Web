@@ -600,67 +600,72 @@ export default function PatientsPage() {
               {/* Detailed Tabs */}
               <Card className="bg-white/80 backdrop-blur-sm shadow-xl border-0">
                 <CardContent className="p-4 sm:p-6">
-                  <Tabs defaultValue="history" className="w-full">
-                    <TabsList className="mb-4 sm:mb-6 bg-gray-100 p-1 rounded-xl flex flex-wrap w-full justify-start">
-                      <TabsTrigger value="history" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden xs:inline">Episode History</span>
-                        <span className="xs:hidden">History</span>
+                  <Tabs defaultValue="clinical" className="w-full">
+                    <TabsList className="mb-4 sm:mb-6 bg-gray-100 p-1 rounded-xl flex flex-wrap w-full justify-start gap-1">
+                      <TabsTrigger value="clinical" className="rounded-lg flex items-center gap-1.5 text-xs sm:text-sm px-3 sm:px-4">
+                        <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
+                        <Pill className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
+                        <span className="hidden sm:inline">History & medications</span>
+                        <span className="sm:hidden">History & meds</span>
                       </TabsTrigger>
-                      <TabsTrigger value="medications" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <Pill className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden xs:inline">Medications</span>
-                        <span className="xs:hidden">Meds</span>
-                      </TabsTrigger>
-                      <TabsTrigger value="appointments" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden xs:inline">Appointments</span>
-                        <span className="xs:hidden">Appts</span>
-                      </TabsTrigger>
-                      <TabsTrigger value="notes" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
-                        Notes
-                      </TabsTrigger>
-                      <TabsTrigger value="reports" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <Download className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden xs:inline">Reports</span>
-                        <span className="xs:hidden">Files</span>
-                      </TabsTrigger>
-                      <TabsTrigger value="communication" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-2 sm:px-3">
-                        <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden xs:inline">Communication</span>
-                        <span className="xs:hidden">Comm</span>
+                      <TabsTrigger value="care" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-3 sm:px-4">
+                        <Calendar className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
+                        <span className="hidden sm:inline">Appointments, notes & more</span>
+                        <span className="sm:hidden">More</span>
                       </TabsTrigger>
                     </TabsList>
 
-                    {/* Episode History */}
-                    <TabsContent value="history">
-                      <EpisodeHistoryTab episodeHistory={episodeHistory} />
+                    <TabsContent value="clinical" className="space-y-8 mt-0">
+                      <section aria-labelledby="patient-episode-history-heading">
+                        <h3 id="patient-episode-history-heading" className="sr-only">
+                          Migraine episode history
+                        </h3>
+                        <EpisodeHistoryTab episodeHistory={episodeHistory} />
+                      </section>
+                      <section aria-labelledby="patient-medications-heading">
+                        <h3 id="patient-medications-heading" className="sr-only">
+                          Medications
+                        </h3>
+                        <MedicationsTab medications={medications} />
+                      </section>
                     </TabsContent>
 
-                    {/* Medications */}
-                    <TabsContent value="medications">
-                      <MedicationsTab medications={medications} />
-                    </TabsContent>
-
-                    {/* Reports & Files */}
-                    <TabsContent value="reports">
-                      <ReportsTab />
-                    </TabsContent>
-
-                    {/* Appointments */}
-                    <TabsContent value="appointments">
-                      <AppointmentsTab appointments={appointments} />
-                    </TabsContent>
-
-                    {/* Clinical Notes */}
-                    <TabsContent value="notes">
-                      <NotesTab notes={notes} />
-                    </TabsContent>
-
-                    {/* Communication Log */}
-                    <TabsContent value="communication">
-                      <CommunicationTab communications={communications} />
+                    <TabsContent value="care" className="mt-0">
+                      <Tabs defaultValue="appointments" className="w-full">
+                        <TabsList className="mb-4 bg-gray-50 border border-gray-200 p-1 rounded-lg flex flex-wrap w-full justify-start gap-0.5">
+                          <TabsTrigger value="appointments" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
+                            <Calendar className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
+                            <span className="hidden xs:inline">Appointments</span>
+                            <span className="xs:hidden">Appts</span>
+                          </TabsTrigger>
+                          <TabsTrigger value="notes" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
+                            <FileText className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
+                            Notes
+                          </TabsTrigger>
+                          <TabsTrigger value="reports" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
+                            <Download className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
+                            <span className="hidden xs:inline">Reports</span>
+                            <span className="xs:hidden">Files</span>
+                          </TabsTrigger>
+                          <TabsTrigger value="communication" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
+                            <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
+                            <span className="hidden xs:inline">Communication</span>
+                            <span className="xs:hidden">Comm</span>
+                          </TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="appointments">
+                          <AppointmentsTab appointments={appointments} />
+                        </TabsContent>
+                        <TabsContent value="notes">
+                          <NotesTab notes={notes} />
+                        </TabsContent>
+                        <TabsContent value="reports">
+                          <ReportsTab />
+                        </TabsContent>
+                        <TabsContent value="communication">
+                          <CommunicationTab communications={communications} />
+                        </TabsContent>
+                      </Tabs>
                     </TabsContent>
                   </Tabs>
                 </CardContent>
