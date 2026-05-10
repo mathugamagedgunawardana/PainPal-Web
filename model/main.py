@@ -24,6 +24,7 @@ if str(_TEXT_DIR) not in sys.path:
     sys.path.insert(0, str(_TEXT_DIR))
 
 from run_pipeline import run_pipeline  # noqa: E402
+from train_next_attack import run_next_attack_pipeline, predict_next_attack  # noqa: E402
 
 _serving: dict[str, Any] = {}
 
@@ -67,6 +68,11 @@ def load_serving_bundle() -> None:
     _serving["model_class_ids"] = (
         joblib.load(_artifact_path("model_class_ids.joblib"))
         if _artifact_path("model_class_ids.joblib").is_file()
+        else None
+    )
+    _serving["next_attack_bundle"] = (
+        joblib.load(_artifact_path("next_attack_bundle.joblib"))
+        if _artifact_path("next_attack_bundle.joblib").is_file()
         else None
     )
     _serving.pop("error", None)
@@ -147,6 +153,22 @@ def predict_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+def predict_next_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    bundle = _serving.get("next_attack_bundle")
+    if bundle is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Next-attack model not loaded. Run POST /pipeline/run-next "
+                "or train locally with text/train_next_attack.py first."
+            ),
+        )
+    try:
+        return predict_next_attack(records, bundle)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_serving_bundle()
@@ -178,8 +200,20 @@ def health():
         "ok": ok,
         "artifacts_dir": str(_TEXT_DIR),
         "has_model_class_ids": _artifact_path("model_class_ids.joblib").is_file(),
+        "has_next_attack_bundle": _artifact_path("next_attack_bundle.joblib").is_file(),
         "error": _serving.get("error"),
     }
+
+
+@app.post("/predict/next-attack")
+def predict_next_attack_endpoint(req: PredictRequest):
+    return predict_next_from_records(req.records)
+
+
+@app.post("/predict_next_attack")
+def predict_next_attack_no_slash(req: PredictRequest):
+    """Alias for proxies or older clients; same handler as /predict/next-attack."""
+    return predict_next_from_records(req.records)
 
 
 @app.post("/predict")
@@ -225,6 +259,38 @@ async def pipeline_run(
     await run_in_threadpool(_run)
     load_serving_bundle()
     return {"status": "completed", "health": health()}
+
+
+@app.api_route("/pipeline/run-next", methods=["GET", "POST"])
+async def pipeline_run_next(
+    data_path: str | None = None,
+    data_dir: str | None = None,
+):
+    """
+    Train next-attack forecasting bundle under model/text/artifacts.
+
+    Use POST from scripts/curl; GET is supported so you can trigger training from a browser
+    during local development (e.g. http://127.0.0.1:8000/pipeline/run-next ).
+    """
+    data_path = _resolve_under_text(data_path)
+    data_dir = _resolve_under_text(data_dir)
+
+    def _run():
+        old = os.getcwd()
+        try:
+            os.chdir(_TEXT_DIR)
+            kwargs: dict[str, Any] = {}
+            if data_path is not None:
+                kwargs["data_path"] = data_path
+            if data_dir is not None:
+                kwargs["data_dir"] = data_dir
+            return run_next_attack_pipeline(**kwargs)
+        finally:
+            os.chdir(old)
+
+    result = await run_in_threadpool(_run)
+    load_serving_bundle()
+    return {"status": "completed", "next_attack_training": result, "health": health()}
 
 
 if __name__ == "__main__":
