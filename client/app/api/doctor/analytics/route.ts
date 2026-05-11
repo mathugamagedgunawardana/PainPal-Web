@@ -60,13 +60,36 @@ function monthBuckets(rangeMonths: number, end: Date): { label: string; start: D
     const d = new Date(end.getFullYear(), end.getMonth() - i, 1)
     const start = new Date(d.getFullYear(), d.getMonth(), 1)
     const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999)
+    const shortMonth = start.toLocaleString('en-US', { month: 'short' })
+    const yy = String(start.getFullYear()).slice(-2)
     out.push({
-      label: start.toLocaleString('en-US', { month: 'short' }),
+      label: `${shortMonth} '${yy}`,
       start,
       end: monthEnd,
     })
   }
   return out
+}
+
+function endOfDay(d: Date): Date {
+  const x = new Date(d)
+  x.setHours(23, 59, 59, 999)
+  return x
+}
+
+/** Prefer anchoring charts to latest logged episode so seeded / historical data still appears. */
+function analyticsRangeEnd(now: Date, latestEpisode: Date | null): Date {
+  if (!latestEpisode) return now
+  return latestEpisode.getTime() > now.getTime() ? now : latestEpisode
+}
+
+function bucketIndexFor(buckets: { start: Date; end: Date }[], dt: Date): number {
+  const t = dt.getTime()
+  for (let i = 0; i < buckets.length; i++) {
+    const b = buckets[i]!
+    if (t >= b.start.getTime() && t <= b.end.getTime()) return i
+  }
+  return -1
 }
 
 function mapMigraineTypeToTrendKey(
@@ -142,10 +165,6 @@ export async function GET(req: NextRequest) {
     }
 
     const now = new Date()
-    const windowStart = new Date(now)
-    windowStart.setMonth(windowStart.getMonth() - rangeMonths)
-    windowStart.setHours(0, 0, 0, 0)
-    const buckets = monthBuckets(rangeMonths, now)
 
     const patientLinks = await prisma.patientDoctorLink.findMany({
       where: { doctorId: doctorProfile.id, linkStatus: 'ACTIVE' },
@@ -170,12 +189,12 @@ export async function GET(req: NextRequest) {
         avgFrequencyTrendLabel: null as string | null,
         activeRateLabel: 'No patients linked',
       },
-      migraineFrequencyTrend: buckets.map((b) => ({
+      migraineFrequencyTrend: monthBuckets(rangeMonths, now).map((b) => ({
         month: b.label,
         avgFrequency: 0,
         totalEvents: 0,
       })),
-      migraineTypeTrend: buckets.map((b) => ({
+      migraineTypeTrend: monthBuckets(rangeMonths, now).map((b) => ({
         date: b.label,
         chronic: 0,
         typicalAura: 0,
@@ -196,7 +215,12 @@ export async function GET(req: NextRequest) {
         { name: 'Poor (<50%)', value: 0, color: '#ef4444' },
         { name: 'No adherence data', value: 0, color: '#94a3b8' },
       ],
-      treatmentOutcomes: buckets.map((b) => ({ month: b.label, improved: 0, stable: 0, worsened: 0 })),
+      treatmentOutcomes: monthBuckets(rangeMonths, now).map((b) => ({
+        month: b.label,
+        improved: 0,
+        stable: 0,
+        worsened: 0,
+      })),
       highRiskPatients: [] as {
         id: string
         name: string
@@ -211,49 +235,100 @@ export async function GET(req: NextRequest) {
         successRatePercent: null as number | null,
         appointmentsThisWeek: 0,
       },
+      meta: {
+        rangeEnd: now.toISOString(),
+        episodeCountInCharts: 0,
+        insightRowsInRange: 0,
+        anchorNote:
+          'Using calendar ending today; link patients and log episodes to populate charts.',
+      },
     }
 
     if (patientIds.length === 0) {
       return NextResponse.json(empty)
     }
 
-    const [events, medGroups, weekAppointments, convos] = await Promise.all([
-      prisma.migraineEvent.findMany({
-        where: { patientId: { in: patientIds }, startDatetime: { gte: windowStart } },
-        select: {
-          patientId: true,
-          startDatetime: true,
-          severity: true,
-          perceivedTriggers: true,
-          migraineType: true,
-          effectiveness: true,
-        },
-      }),
-      prisma.medicationGroup.findMany({
-        where: { doctorId: doctorProfile.id, patientId: { in: patientIds }, isActive: true },
-        select: { patientId: true, adherenceRate: true },
-      }),
-      prisma.appointment.findMany({
-        where: {
-          doctorId: doctorProfile.id,
-          patientId: { in: patientIds },
-          status: { not: 'CANCELLED' },
-          appointmentDate: { gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) },
-        },
-        select: { id: true },
-      }),
-      prisma.conversation.findMany({
-        where: { doctorId: doctorProfile.id, patientId: { in: patientIds } },
-        take: 35,
-        select: {
-          messages: {
-            orderBy: { createdAt: 'asc' },
-            take: 250,
-            select: { createdAt: true, senderRole: true },
+    const latestAgg = await prisma.migraineEvent.aggregate({
+      where: { patientId: { in: patientIds } },
+      _max: { startDatetime: true },
+    })
+    const rangeEnd = analyticsRangeEnd(now, latestAgg._max.startDatetime)
+    const buckets = monthBuckets(rangeMonths, rangeEnd)
+    const sliceStart = buckets[0]!.start
+    const sliceEnd = endOfDay(rangeEnd)
+    const sliceEndMs = sliceEnd.getTime()
+
+    const riskLookback = new Date(rangeEnd)
+    riskLookback.setDate(riskLookback.getDate() - 150)
+
+    const [eventsChart, eventsRisk, aiInsights, medGroups, weekAppointments, convos] =
+      await Promise.all([
+        prisma.migraineEvent.findMany({
+          where: {
+            patientId: { in: patientIds },
+            startDatetime: { gte: sliceStart, lte: sliceEnd },
           },
-        },
-      }),
-    ])
+          select: {
+            patientId: true,
+            startDatetime: true,
+            severity: true,
+            perceivedTriggers: true,
+            detectedSymptoms: true,
+            migraineType: true,
+            effectiveness: true,
+          },
+        }),
+        prisma.migraineEvent.findMany({
+          where: {
+            patientId: { in: patientIds },
+            startDatetime: { gte: riskLookback, lte: sliceEnd },
+          },
+          select: {
+            patientId: true,
+            startDatetime: true,
+            severity: true,
+            perceivedTriggers: true,
+            detectedSymptoms: true,
+            migraineType: true,
+            effectiveness: true,
+          },
+        }),
+        prisma.aIDiagnosticInsight.findMany({
+          where: {
+            patientId: { in: patientIds },
+            createdDatetime: { gte: sliceStart, lte: sliceEnd },
+          },
+          select: {
+            createdDatetime: true,
+            migraineType: true,
+            keyContributors: true,
+          },
+        }),
+        prisma.medicationGroup.findMany({
+          where: { doctorId: doctorProfile.id, patientId: { in: patientIds }, isActive: true },
+          select: { patientId: true, adherenceRate: true },
+        }),
+        prisma.appointment.findMany({
+          where: {
+            doctorId: doctorProfile.id,
+            patientId: { in: patientIds },
+            status: { not: 'CANCELLED' },
+            appointmentDate: { gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) },
+          },
+          select: { id: true },
+        }),
+        prisma.conversation.findMany({
+          where: { doctorId: doctorProfile.id, patientId: { in: patientIds } },
+          take: 35,
+          select: {
+            messages: {
+              orderBy: { createdAt: 'asc' },
+              take: 250,
+              select: { createdAt: true, senderRole: true },
+            },
+          },
+        }),
+      ])
 
     const adherenceByPatient = new Map<string, number[]>()
     for (const g of medGroups) {
@@ -267,8 +342,8 @@ export async function GET(req: NextRequest) {
       return Math.round(arr.reduce((a, b) => a + b, 0) / arr.length)
     }
 
-    const eventsByPatient = new Map<string, typeof events>()
-    for (const e of events) {
+    const eventsByPatient = new Map<string, typeof eventsRisk>()
+    for (const e of eventsRisk) {
       if (!eventsByPatient.has(e.patientId)) eventsByPatient.set(e.patientId, [])
       eventsByPatient.get(e.patientId)!.push(e)
     }
@@ -336,12 +411,15 @@ export async function GET(req: NextRequest) {
         ? `${highRiskPatients} patient(s) in high-risk window`
         : 'No high-risk patients (30d rules)'
 
+    const episodeInBucket = (startDatetime: Date, b: (typeof buckets)[0]) => {
+      const t = new Date(startDatetime).getTime()
+      const hi = Math.min(b.end.getTime(), sliceEndMs)
+      return t >= b.start.getTime() && t <= hi
+    }
+
     // Frequency trend + type trend + treatment outcomes per bucket
     const migraineFrequencyTrend = buckets.map((b) => {
-      const inB = events.filter((e) => {
-        const t = new Date(e.startDatetime)
-        return t >= b.start && t <= b.end
-      })
+      const inB = eventsChart.filter((e) => episodeInBucket(e.startDatetime, b))
       const denom = Math.max(1, patientIds.length)
       return {
         month: b.label,
@@ -350,17 +428,12 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    const lastBucketEvents = events.filter((e) => {
-      const t = new Date(e.startDatetime)
-      return t >= buckets[buckets.length - 1]!.start && t <= buckets[buckets.length - 1]!.end
-    })
+    const lastBucketEvents = eventsChart.filter((e) =>
+      episodeInBucket(e.startDatetime, buckets[buckets.length - 1]!)
+    )
     const prevBucketEvents =
       buckets.length >= 2
-        ? events.filter((e) => {
-            const t = new Date(e.startDatetime)
-            const pb = buckets[buckets.length - 2]!
-            return t >= pb.start && t <= pb.end
-          })
+        ? eventsChart.filter((e) => episodeInBucket(e.startDatetime, buckets[buckets.length - 2]!))
         : []
     const denom = Math.max(1, patientIds.length)
     const lastAvg = lastBucketEvents.length / denom
@@ -376,29 +449,33 @@ export async function GET(req: NextRequest) {
             : `${delta} avg episodes/patient vs prior month`
     }
 
-    const migraineTypeTrend = buckets.map((b) => {
-      const row = {
-        date: b.label,
-        chronic: 0,
-        typicalAura: 0,
-        vestibular: 0,
-        hemiplegic: 0,
-        probable: 0,
-      }
-      for (const e of events) {
-        const t = new Date(e.startDatetime)
-        if (t < b.start || t > b.end) continue
-        const key = mapMigraineTypeToTrendKey(e.migraineType)
-        if (key) row[key] += 1
-      }
-      return row
-    })
+    const migraineTypeTrend = buckets.map((b) => ({
+      date: b.label,
+      chronic: 0,
+      typicalAura: 0,
+      vestibular: 0,
+      hemiplegic: 0,
+      probable: 0,
+    }))
+    for (const e of eventsChart) {
+      const bi = bucketIndexFor(buckets, new Date(e.startDatetime))
+      if (bi < 0) continue
+      const key = mapMigraineTypeToTrendKey(e.migraineType)
+      if (key) migraineTypeTrend[bi]![key] += 1
+    }
+    for (const row of aiInsights) {
+      const dt = new Date(row.createdDatetime)
+      if (dt.getTime() > sliceEndMs) continue
+      const bi = bucketIndexFor(buckets, dt)
+      if (bi < 0) continue
+      const key = mapMigraineTypeToTrendKey(row.migraineType)
+      if (key) migraineTypeTrend[bi]![key] += 1
+    }
 
     const treatmentOutcomes = buckets.map((b) => {
       const improved = { improved: 0, stable: 0, worsened: 0 }
-      for (const e of events) {
-        const t = new Date(e.startDatetime)
-        if (t < b.start || t > b.end) continue
+      for (const e of eventsChart) {
+        if (!episodeInBucket(e.startDatetime, b)) continue
         const bucket = effectivenessBucket(e.effectiveness)
         if (bucket === 'improved') improved.improved += 1
         else if (bucket === 'stable') improved.stable += 1
@@ -410,7 +487,7 @@ export async function GET(req: NextRequest) {
     let mild = 0,
       mod = 0,
       sev = 0
-    for (const e of events) {
+    for (const e of eventsChart) {
       if (e.severity <= 3) mild += 1
       else if (e.severity <= 6) mod += 1
       else sev += 1
@@ -424,11 +501,23 @@ export async function GET(req: NextRequest) {
     ]
 
     const triggerCounts = new Map<string, number>()
-    for (const e of events) {
-      const tokens = parseTriggerTokens(e.perceivedTriggers)
-      if (!tokens.length) continue
-      for (const tok of tokens) {
+    for (const e of eventsChart) {
+      for (const tok of parseTriggerTokens(e.perceivedTriggers)) {
         triggerCounts.set(tok, (triggerCounts.get(tok) ?? 0) + 1)
+      }
+      for (const raw of e.detectedSymptoms ?? []) {
+        const sym = raw.trim()
+        if (!sym) continue
+        const label = `Symptom: ${sym}`
+        triggerCounts.set(label, (triggerCounts.get(label) ?? 0) + 1)
+      }
+    }
+    for (const ins of aiInsights) {
+      if (new Date(ins.createdDatetime).getTime() > sliceEndMs) continue
+      for (const raw of ins.keyContributors ?? []) {
+        const k = raw.trim()
+        if (!k) continue
+        triggerCounts.set(k, (triggerCounts.get(k) ?? 0) + 1)
       }
     }
     const totalTriggerMentions = [...triggerCounts.values()].reduce((a, b) => a + b, 0)
@@ -468,7 +557,7 @@ export async function GET(req: NextRequest) {
 
     let effHigh = 0,
       effTot = 0
-    for (const e of events) {
+    for (const e of eventsChart) {
       if (e.effectiveness == null) continue
       effTot += 1
       if (e.effectiveness === 'HIGH') effHigh += 1
@@ -491,7 +580,7 @@ export async function GET(req: NextRequest) {
     const lastMonthAvg =
       migraineFrequencyTrend[migraineFrequencyTrend.length - 1]?.avgFrequency ?? 0
 
-    const patientsWithEpisodes = new Set(events.map((e) => e.patientId)).size
+    const patientsWithEpisodes = new Set(eventsChart.map((e) => e.patientId)).size
     const activeRateLabel =
       patientIds.length > 0
         ? `${Math.round((patientsWithEpisodes / patientIds.length) * 1000) / 10}% with ≥1 episode in range`
@@ -520,6 +609,17 @@ export async function GET(req: NextRequest) {
         avgResponseHours,
         successRatePercent,
         appointmentsThisWeek: weekAppointments.length,
+      },
+      meta: {
+        rangeEnd: rangeEnd.toISOString(),
+        chartWindowStart: sliceStart.toISOString(),
+        episodeCountInCharts: eventsChart.length,
+        insightRowsInRange: aiInsights.length,
+        anchorNote:
+          latestAgg._max.startDatetime &&
+          latestAgg._max.startDatetime.getTime() < now.getTime() - 24 * 60 * 60 * 1000
+            ? `Charts anchor to your panel’s latest episode (${rangeEnd.toLocaleDateString()}), so older seed data still appears.`
+            : 'Charts use the selected period ending with the most recent episode (or today).',
       },
     })
   } catch (error) {

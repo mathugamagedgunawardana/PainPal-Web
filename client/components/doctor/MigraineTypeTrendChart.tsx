@@ -45,9 +45,11 @@ function getDominantType(latest: MigraineTypeTrendPoint | undefined) {
 interface MigraineTypeTrendChartProps {
   data: MigraineTypeTrendPoint[]
   patientName?: string
+  /** Extra line under the description (e.g. population analytics source hint). */
+  extraDescription?: string
 }
 
-export function MigraineTypeTrendChart({ data, patientName }: MigraineTypeTrendChartProps) {
+export function MigraineTypeTrendChart({ data, patientName, extraDescription }: MigraineTypeTrendChartProps) {
   const latest = data.length > 0 ? data[data.length - 1] : undefined
   const dominantType = getDominantType(latest)
   const latestMonthTotal = latest
@@ -68,7 +70,13 @@ export function MigraineTypeTrendChart({ data, patientName }: MigraineTypeTrendC
               Migraine Type Trend
             </CardTitle>
             <CardDescription>
-              Episodes with a classified migraine type (from logs){patientName ? ` for ${patientName}` : ""}
+              Counts from episode{" "}
+              <span className="font-medium">migraineType</span> plus AI insights{" "}
+              <span className="font-medium">migraineType</span>
+              {patientName ? ` for ${patientName}` : ""}
+              {extraDescription ? (
+                <span className="block mt-1 text-xs text-muted-foreground">{extraDescription}</span>
+              ) : null}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -85,8 +93,9 @@ export function MigraineTypeTrendChart({ data, patientName }: MigraineTypeTrendC
       <CardContent>
         {data.length === 0 || seriesTotal === 0 ? (
           <p className="text-sm text-muted-foreground py-16 text-center">
-            No typed migraine episodes in this range. Types appear when events store{" "}
-            <span className="font-medium">migraineType</span> (model or manual).
+            No typed rows in this window. Populate{" "}
+            <span className="font-medium">MigraineEvent.migraineType</span> (sync/model/manual) or{" "}
+            <span className="font-medium">AIDiagnosticInsight</span> records for linked patients.
           </p>
         ) : (
           <ChartContainer config={chartConfig} className="h-[320px] w-full">

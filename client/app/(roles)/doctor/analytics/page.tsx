@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import {
-  AreaChart,
+  ComposedChart,
   Area,
   XAxis,
   YAxis,
@@ -77,6 +77,13 @@ type DoctorAnalyticsPayload = {
     avgResponseHours: number | null
     successRatePercent: number | null
     appointmentsThisWeek: number
+  }
+  meta?: {
+    rangeEnd: string
+    chartWindowStart: string
+    episodeCountInCharts: number
+    insightRowsInRange: number
+    anchorNote: string
   }
 }
 
@@ -226,6 +233,18 @@ export default function DoctorAnalyticsPage() {
         ))}
       </div>
 
+      {data?.meta && (
+        <div className="mb-6 rounded-lg border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-slate-700">
+          <p className="font-medium text-slate-900">Data window</p>
+          <p className="mt-1 text-xs leading-relaxed">{data.meta.anchorNote}</p>
+          <p className="mt-2 text-xs text-slate-600">
+            <span className="font-medium">{data.meta.episodeCountInCharts}</span> episodes in charts ·{' '}
+            <span className="font-medium">{data.meta.insightRowsInRange}</span> AI insights · Ends{' '}
+            <span className="font-medium">{new Date(data.meta.rangeEnd).toLocaleDateString()}</span>
+          </p>
+        </div>
+      )}
+
       {error && (
         <Card className="mb-6 border-amber-200 bg-amber-50">
           <CardHeader className="py-3">
@@ -276,7 +295,14 @@ export default function DoctorAnalyticsPage() {
       </div>
 
       <div className="mb-6">
-        <MigraineTypeTrendChart data={typeTrend} />
+        <MigraineTypeTrendChart
+          data={typeTrend}
+          extraDescription={
+            data?.meta
+              ? `Merged monthly counts: episodes with migraineType plus diagnostic insights in the same window.`
+              : undefined
+          }
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -286,33 +312,52 @@ export default function DoctorAnalyticsPage() {
               <TrendingUp className="w-5 h-5 text-blue-600" />
               Migraine frequency trend
             </CardTitle>
-            <CardDescription>Total episodes per month ÷ linked patients</CardDescription>
+            <CardDescription>
+              Average episodes per linked patient by month (bars show total episode volume)
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {freqTrend.length === 0 ? (
               <p className="text-sm text-muted-foreground py-12 text-center">No data in this range.</p>
             ) : (
-              <ChartContainer config={chartConfig} className="h-[300px] w-full">
-                <AreaChart data={freqTrend}>
-                  <defs>
-                    <linearGradient id="colorFrequency" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Area
-                    type="monotone"
-                    dataKey="avgFrequency"
-                    stroke="#3b82f6"
-                    fillOpacity={1}
-                    fill="url(#colorFrequency)"
-                  />
-                </AreaChart>
-              </ChartContainer>
+              <>
+                <ChartContainer config={chartConfig} className="h-[300px] w-full">
+                  <ComposedChart data={freqTrend}>
+                    <defs>
+                      <linearGradient id="colorFrequency" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                    <YAxis yAxisId="avg" />
+                    <YAxis yAxisId="tot" orientation="right" allowDecimals={false} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar
+                      yAxisId="tot"
+                      dataKey="totalEvents"
+                      fill="#c4b5fd"
+                      fillOpacity={0.5}
+                      name="Total episodes"
+                      radius={[2, 2, 0, 0]}
+                    />
+                    <Area
+                      yAxisId="avg"
+                      type="monotone"
+                      dataKey="avgFrequency"
+                      stroke="#2563eb"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#colorFrequency)"
+                      name="Avg / patient"
+                    />
+                  </ComposedChart>
+                </ChartContainer>
+                <p className="mt-2 text-xs text-muted-foreground text-center">
+                  {freqTrend.reduce((s, x) => s + x.totalEvents, 0)} total episodes across displayed months
+                </p>
+              </>
             )}
           </CardContent>
         </Card>
@@ -435,7 +480,9 @@ export default function DoctorAnalyticsPage() {
               <AlertTriangle className="w-5 h-5 text-orange-600" />
               Common triggers
             </CardTitle>
-            <CardDescription>Perceived triggers on episodes (last range window)</CardDescription>
+            <CardDescription>
+              Perceived triggers on episodes, logged symptoms (Symptom: …), and AI key contributors
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {commonTriggers.length === 0 ? (

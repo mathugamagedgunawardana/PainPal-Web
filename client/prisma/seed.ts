@@ -108,6 +108,35 @@ function parseDate(isoDate: string): Date {
   return new Date(isoDate + 'T12:00:00.000Z')
 }
 
+/** LCG — deterministic per (patient, row) so re-seeding stays reproducible but dates look varied. */
+function createSeededRng(seed: number): () => number {
+  let state = seed >>> 0
+  return () => {
+    state = (1664525 * state + 1013904223) >>> 0
+    return state / 4294967296
+  }
+}
+
+/**
+ * Random calendar timestamps spread across `spreadMonths` separate months (going backward from anchor).
+ */
+function randomEpisodeStartUtc(anchor: Date, spreadMonths: number, patientNumber: number, rowIndex: number): Date {
+  const rand = createSeededRng((patientNumber * 100003 + rowIndex * 97266353 + spreadMonths) >>> 0)
+  const monthPick = Math.floor(rand() * spreadMonths)
+  const d = new Date(anchor)
+  d.setUTCDate(1)
+  d.setUTCHours(12, 0, 0, 0)
+  d.setUTCMonth(d.getUTCMonth() - monthPick)
+
+  const y = d.getUTCFullYear()
+  const m = d.getUTCMonth()
+  const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
+  const day = 1 + Math.floor(rand() * daysInMonth)
+  const hour = 6 + Math.floor(rand() * 14)
+  const minute = Math.floor(rand() * 60)
+  return new Date(Date.UTC(y, m, day, hour, minute, 0, 0))
+}
+
 function readCsvRows(filePath: string): TrainingAttackRow[] {
   const raw = fs.readFileSync(filePath, 'utf8').trim()
   if (!raw) return []
@@ -518,7 +547,10 @@ async function main() {
   ].filter((item): item is { patientNumber: number; profileId: string } => !!item.profileId)
 
   if (fs.existsSync(trainingDataDir)) {
-    const baseDate = new Date('2025-01-01T08:00:00.000Z')
+    /** Episodes land in random days across this many past months (relative to seed run time). */
+    const EPISODE_MONTH_SPREAD = 15
+    const episodeAnchor = new Date()
+    episodeAnchor.setUTCMinutes(0, 0, 0)
 
     for (const item of csvPatientMap) {
       const csvPath = path.join(trainingDataDir, `patient_${item.patientNumber}_migraine_attacks.csv`)
@@ -536,8 +568,12 @@ async function main() {
         const row = diversifiedRowForSeedPatient(item.patientNumber, rows[i], i)
         const { detectedSymptoms, triggers } = buildSymptomsAndTriggers(row)
 
-        const eventDate = new Date(baseDate)
-        eventDate.setUTCDate(baseDate.getUTCDate() - i - (item.patientNumber - 1) * 45)
+        const eventDate = randomEpisodeStartUtc(
+          episodeAnchor,
+          EPISODE_MONTH_SPREAD,
+          item.patientNumber,
+          i
+        )
 
         await prisma.migraineEvent.create({
           data: {
