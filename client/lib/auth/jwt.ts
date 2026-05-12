@@ -42,6 +42,20 @@ export async function signToken(payload: JWTPayload): Promise<string> {
   return token;
 }
 
+const JWT_QUIET_CODES = new Set([
+  'ERR_JWS_SIGNATURE_VERIFICATION_FAILED',
+  'ERR_JWT_EXPIRED',
+  'ERR_JWT_INVALID',
+  'ERR_JWT_CLAIM_VALIDATION_FAILED',
+])
+
+function jwtErrorCode(error: unknown): string | undefined {
+  if (error && typeof error === 'object' && 'code' in error) {
+    return String((error as { code?: unknown }).code)
+  }
+  return undefined
+}
+
 /**
  * Verify and decode a JWT token
  */
@@ -49,8 +63,11 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
   try {
     const { payload } = await jwtVerify(token, jwtSecretBytes());
     return payload as unknown as JWTPayload;
-  } catch (error) {
-    console.error('JWT verification failed:', error);
+  } catch (error: unknown) {
+    const code = jwtErrorCode(error)
+    if (!code || !JWT_QUIET_CODES.has(code)) {
+      console.error('JWT verification failed:', error);
+    }
     return null;
   }
 }

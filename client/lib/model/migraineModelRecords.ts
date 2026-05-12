@@ -56,7 +56,6 @@ type EventLike = {
   ataxia: number | null
   conscience: number | null
   paresthesia: number | null
-  dpf: number | null
   studyType: string | null
   severity: number
 }
@@ -136,7 +135,7 @@ export function migraineEventToModelRecord(e: EventLike): ModelRecord {
     Ataxia: e.ataxia ?? 0,
     Conscience: e.conscience ?? 0,
     Paresthesia: e.paresthesia ?? 0,
-    DPF: e.dpf ?? 0,
+    DPF: 0,
     Type: e.studyType ?? '',
   }
 }
@@ -204,7 +203,7 @@ export function migraineEventsToModelRecords(
       Ataxia: e.ataxia ?? 0,
       Conscience: e.conscience ?? 0,
       Paresthesia: e.paresthesia ?? 0,
-      DPF: e.dpf ?? 0,
+      DPF: 0,
       Type: typeStr,
     }
   })

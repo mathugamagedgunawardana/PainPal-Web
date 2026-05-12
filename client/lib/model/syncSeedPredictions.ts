@@ -86,7 +86,6 @@ export async function syncSeedPredictionsFromModel(prisma: PrismaClient): Promis
       ataxia: true,
       conscience: true,
       paresthesia: true,
-      dpf: true,
       studyType: true,
     },
     take: 500,
@@ -117,7 +116,7 @@ export async function syncSeedPredictionsFromModel(prisma: PrismaClient): Promis
     Ataxia: row.ataxia ?? 0,
     Conscience: row.conscience ?? 0,
     Paresthesia: row.paresthesia ?? 0,
-    DPF: row.dpf ?? 0,
+    DPF: 0,
     Type: row.studyType ?? '',
   }))
 

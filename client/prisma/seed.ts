@@ -246,7 +246,6 @@ function trainingFieldsFromRow(row: TrainingAttackRow, rowIndex: number) {
     ataxia: toInt(row.Ataxia),
     conscience: toInt(row.Conscience),
     paresthesia: toInt(row.Paresthesia),
-    dpf: toInt(row.DPF),
     studyType: row.Type?.trim() || null,
     csvMigraineType: row.MigraineType?.trim() || null,
   }
@@ -432,6 +431,10 @@ async function main() {
       name: 'Acute Treatment Protocol',
       groupType: 'RESCUE',
       medications: ['Sumatriptan 50mg', 'Topiramate 25mg'],
+      medicationSchedule: [
+        { name: 'Sumatriptan 50mg', tablets: 1, time: '09:00' },
+        { name: 'Topiramate 25mg', tablets: 1, time: '21:00' },
+      ],
       color: 'blue',
       adherenceRate: 78,
     },
@@ -490,8 +493,9 @@ async function main() {
     { date: '2024-12-10', type: 'Regular Check-up', status: 'COMPLETED' as const },
     { date: '2024-11-15', type: 'Initial Consultation', status: 'COMPLETED' as const },
   ]
+  const createdAppointmentIds: string[] = []
   for (const a of appointments) {
-    await prisma.appointment.create({
+    const row = await prisma.appointment.create({
       data: {
         patientId: patient1Id,
         doctorId: doctor.id,
@@ -500,42 +504,68 @@ async function main() {
         status: a.status,
       },
     })
+    createdAppointmentIds.push(row.id)
   }
+  const apptFollowUpId = createdAppointmentIds[0]
+  const apptRegularId = createdAppointmentIds[1]
+  const apptInitialId = createdAppointmentIds[2]
   console.log('Created appointments for first patient')
 
-  // 9. Clinical notes for first patient
-  const notes = [
-    { date: '2024-12-10', note: 'Patient reports increased frequency. Adjusted medication dosage.', author: 'Dr. Johnson' },
-    { date: '2024-11-15', note: 'Initial assessment completed. Prescribed preventive treatment.', author: 'Dr. Johnson' },
-  ]
-  for (const n of notes) {
-    await prisma.clinicalNote.create({
-      data: {
-        patientId: patient1Id,
-        doctorId: doctor.id,
-        noteContent: n.note,
-      },
-    })
-  }
+  // 9. Clinical notes linked to visits
+  await prisma.clinicalNote.create({
+    data: {
+      patientId: patient1Id,
+      doctorId: doctor.id,
+      appointmentId: apptRegularId,
+      noteContent: 'Patient reports increased frequency. Adjusted medication dosage.',
+    },
+  })
+  await prisma.clinicalNote.create({
+    data: {
+      patientId: patient1Id,
+      doctorId: doctor.id,
+      appointmentId: apptInitialId,
+      noteContent: 'Initial assessment completed. Prescribed preventive treatment.',
+    },
+  })
   console.log('Created clinical notes for first patient')
 
-  // 10. Communications for first patient
-  const comms = [
-    { date: '2024-12-12', type: 'Reminder', message: 'Appointment reminder sent', channel: 'SMS' },
-    { date: '2024-12-08', type: 'Message', message: 'Medication refill approved', channel: 'Email' },
-  ]
-  for (const c of comms) {
-    await prisma.communication.create({
+  // 10. Communications linked to visits
+  await prisma.communication.create({
+    data: {
+      patientId: patient1Id,
+      doctorId: doctor.id,
+      appointmentId: apptFollowUpId,
+      communicationType: 'Reminder',
+      message: 'Appointment reminder sent',
+      channel: 'SMS',
+    },
+  })
+  await prisma.communication.create({
+    data: {
+      patientId: patient1Id,
+      doctorId: doctor.id,
+      appointmentId: apptRegularId,
+      communicationType: 'Message',
+      message: 'Medication refill approved',
+      channel: 'Email',
+    },
+  })
+  console.log('Created communications for first patient')
+
+  if (apptInitialId) {
+    await prisma.appointmentFile.create({
       data: {
-        patientId: patient1Id,
+        appointmentId: apptInitialId,
         doctorId: doctor.id,
-        communicationType: c.type,
-        message: c.message,
-        channel: c.channel,
+        title: 'Baseline intake questionnaire',
+        fileUrl: 'https://example.com/patient-intake.pdf',
+        fileName: 'intake.pdf',
+        mimeType: 'application/pdf',
       },
     })
+    console.log('Created sample appointment file for first patient')
   }
-  console.log('Created communications for first patient')
 
   // 11. Import CSV attack rows from model/text/Data/traningData for seeded patients 1..4
   const trainingDataDir = path.resolve(__dirname, '..', '..', 'model', 'text', 'Data', 'traningData')

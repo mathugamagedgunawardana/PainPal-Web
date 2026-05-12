@@ -39,7 +39,6 @@ const MIGRAINE_EVENT_MODEL_SELECT = {
   ataxia: true,
   conscience: true,
   paresthesia: true,
-  dpf: true,
 } as const
 
 const TYPE_LABELS: Record<string, string> = {

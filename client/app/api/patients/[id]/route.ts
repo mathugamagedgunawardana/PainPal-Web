@@ -112,18 +112,24 @@ export async function GET(
             where: { doctorId: doctorProfile.id },
             orderBy: { appointmentDate: 'desc' },
             take: 20,
-            include: { doctor: { select: { name: true } } },
-          },
-          clinicalNotes: {
-            where: { doctorId: doctorProfile.id },
-            orderBy: { createdAt: 'desc' },
-            take: 20,
-            include: { doctor: { select: { name: true } } },
-          },
-          communications: {
-            where: { doctorId: doctorProfile.id },
-            orderBy: { createdAt: 'desc' },
-            take: 20,
+            include: {
+              doctor: { select: { name: true } },
+              clinicalNotes: {
+                orderBy: { createdAt: 'desc' },
+                take: 50,
+                include: { doctor: { select: { name: true } } },
+              },
+              communications: {
+                orderBy: { createdAt: 'desc' },
+                take: 50,
+                include: { doctor: { select: { name: true } } },
+              },
+              files: {
+                orderBy: { createdAt: 'desc' },
+                take: 50,
+                include: { doctor: { select: { name: true } } },
+              },
+            },
           },
         },
       })
@@ -131,6 +137,21 @@ export async function GET(
       if (!patient) {
         return NextResponse.json({ error: 'Patient not found' }, { status: 404 })
       }
+
+      const [unlinkedNotesRaw, unlinkedCommunicationsRaw] = await Promise.all([
+        prisma.clinicalNote.findMany({
+          where: { patientId, doctorId: doctorProfile.id, appointmentId: null },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+          include: { doctor: { select: { name: true } } },
+        }),
+        prisma.communication.findMany({
+          where: { patientId, doctorId: doctorProfile.id, appointmentId: null },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+          include: { doctor: { select: { name: true } } },
+        }),
+      ])
 
       const now = new Date()
       const appointments = patient.appointments || []
@@ -181,6 +202,16 @@ export async function GET(
         }
       })
 
+      const medicationGroups = groups.map((g) => ({
+        id: g.id,
+        name: g.name,
+        description: g.description ?? null,
+        groupType: g.groupType,
+        medications: g.medications ?? [],
+        medicationSchedule: g.medicationSchedule ?? null,
+        isActive: g.isActive,
+      }))
+
       const medications = (patient.medicationLogs || []).slice(0, 10).map((log, idx) => ({
         name: log.medicationName,
         frequency: log.frequency ?? 'As needed',
@@ -201,32 +232,61 @@ export async function GET(
       }
 
       const appointmentsList = (patient.appointments || []).map((a) => ({
+        id: a.id,
         date: formatDate(a.appointmentDate),
         type: a.appointmentType,
         doctor: a.doctor?.name ?? 'Doctor',
         status: a.status,
+        patientPresent: a.patientPresent,
+        visitNotes: a.notes ?? null,
+        clinicalNotes: (a.clinicalNotes || []).map((n) => ({
+          id: n.id,
+          date: formatDate(n.createdAt),
+          note: n.noteContent,
+          author: n.doctor?.name ?? 'Doctor',
+        })),
+        communications: (a.communications || []).map((c) => ({
+          id: c.id,
+          date: formatDate(c.createdAt),
+          type: c.communicationType,
+          message: c.message,
+          channel: c.channel,
+          author: c.doctor?.name ?? '—',
+        })),
+        files: (a.files || []).map((f) => ({
+          id: f.id,
+          title: f.title,
+          fileUrl: f.fileUrl,
+          fileName: f.fileName,
+          createdAt: f.createdAt.toISOString(),
+          uploadedBy: f.doctor?.name ?? 'Doctor',
+        })),
       }))
 
-      const notes = (patient.clinicalNotes || []).map((n) => ({
+      const unlinkedNotes = unlinkedNotesRaw.map((n) => ({
+        id: n.id,
         date: formatDate(n.createdAt),
         note: n.noteContent,
         author: n.doctor?.name ?? 'Doctor',
       }))
 
-      const communications = (patient.communications || []).map((c) => ({
+      const unlinkedCommunications = unlinkedCommunicationsRaw.map((c) => ({
+        id: c.id,
         date: formatDate(c.createdAt),
         type: c.communicationType,
         message: c.message,
         channel: c.channel,
+        author: c.doctor?.name ?? '—',
       }))
 
       return NextResponse.json({
         profile,
         episodeHistory,
         medications,
+        medicationGroups,
         appointments: appointmentsList,
-        notes,
-        communications,
+        unlinkedNotes,
+        unlinkedCommunications,
       })
     } catch (error) {
       console.error('Database error:', error)

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import {
   Activity,
   TrendingUp,
@@ -10,6 +11,8 @@ import {
   Loader2,
   BarChart3,
   Calendar,
+  Sparkles,
+  RefreshCw,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -49,6 +52,13 @@ type AnalyticsData = {
   nextAttackDisclaimer?: string
 }
 
+type StoredAiSummary = {
+  id: string
+  generatedDate: string
+  structuredSummaryText: string
+  treatmentOutcomeAnalysis: string
+}
+
 function formatTypeLabel(raw: string): string {
   if (!raw) return '—'
   return raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -59,20 +69,31 @@ const SEVERITY_COLORS = ['#22c55e', '#84cc16', '#eab308', '#f97316', '#ef4444']
 
 export default function PatientAnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null)
+  const [aiStoredSummary, setAiStoredSummary] = useState<StoredAiSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [aiRefreshing, setAiRefreshing] = useState(false)
+  const [aiMessage, setAiMessage] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetch('/api/patient/analytics', { credentials: 'include' })
-      .then((res) => {
+    Promise.all([
+      fetch('/api/patient/analytics', { credentials: 'include' }).then((res) => {
         if (!res.ok) throw new Error('Failed to load analytics')
-        return res.json()
-      })
-      .then((d: AnalyticsData) => {
-        if (!cancelled) setData(d)
+        return res.json() as Promise<AnalyticsData>
+      }),
+      fetch('/api/patient/ai-summary', { credentials: 'include' }).then((res) => {
+        if (!res.ok) return { summary: null as StoredAiSummary | null }
+        return res.json() as Promise<{ summary: StoredAiSummary | null }>
+      }),
+    ])
+      .then(([analyticsData, aiPayload]) => {
+        if (!cancelled) {
+          setData(analyticsData)
+          setAiStoredSummary(aiPayload.summary)
+        }
       })
       .catch((e) => {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load analytics')
@@ -82,6 +103,32 @@ export default function PatientAnalyticsPage() {
       })
     return () => { cancelled = true }
   }, [])
+
+  const refreshAiSummary = async () => {
+    setAiRefreshing(true)
+    setAiMessage(null)
+    try {
+      const res = await fetch('/api/patient/ai-summary', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const body = (await res.json()) as {
+        summary?: StoredAiSummary
+        message?: string
+        saved?: boolean
+        error?: string
+      }
+      if (!res.ok) {
+        throw new Error(body.error || 'Failed to refresh AI summary')
+      }
+      if (body.summary) setAiStoredSummary(body.summary)
+      if (body.message) setAiMessage(body.message)
+    } catch (e) {
+      setAiMessage(e instanceof Error ? e.message : 'Refresh failed')
+    } finally {
+      setAiRefreshing(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -112,6 +159,52 @@ export default function PatientAnalyticsPage() {
         <h1 className="text-2xl font-bold text-gray-900">My Analytics</h1>
         <p className="text-gray-600 text-sm mt-1">Your migraine and treatment insights</p>
       </div>
+
+      <Card className="border-violet-200 bg-violet-50/40">
+        <CardHeader className="pb-2 flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+          <CardTitle className="text-lg flex items-center gap-2 text-gray-900">
+            <Sparkles className="w-5 h-5 text-violet-600" />
+            AI health summary
+          </CardTitle>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={aiRefreshing}
+            onClick={() => void refreshAiSummary()}
+          >
+            {aiRefreshing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            <span className="ml-1.5">{aiStoredSummary ? 'Refresh' : 'Generate'}</span>
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-gray-700">
+          {aiMessage ? <p className="text-amber-800 text-xs">{aiMessage}</p> : null}
+          {!aiStoredSummary ? (
+            <p className="text-gray-600">
+              No saved summary yet. Tap Generate to build one from your recent logs (saved when you have an
+              active clinic link).
+            </p>
+          ) : (
+            <>
+              <p className="leading-relaxed whitespace-pre-wrap">{aiStoredSummary.structuredSummaryText}</p>
+              <div className="rounded-lg bg-white/80 border border-violet-100 p-3">
+                <p className="text-xs font-semibold text-violet-800 uppercase mb-1">Care plan angle</p>
+                <p className="leading-relaxed whitespace-pre-wrap">
+                  {aiStoredSummary.treatmentOutcomeAnalysis}
+                </p>
+              </div>
+              <p className="text-xs text-gray-500">
+                Updated {new Date(aiStoredSummary.generatedDate).toLocaleString()} · For education only, not
+                a diagnosis or emergency guidance.
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
