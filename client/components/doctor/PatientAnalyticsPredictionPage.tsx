@@ -944,14 +944,17 @@ export default function PatientAnalyticsPredictionPage({
               ) : null}
               {typeof next.frequency === "number" ? (
                 <div className="rounded-md bg-white/80 border border-amber-100 px-3 py-2">
-                  <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Est. frequency</p>
-                  <p className="text-base font-semibold text-gray-900 mt-0.5">{next.frequency.toFixed(1)}</p>
+                  <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Est. episodes / mo</p>
+                  <p className="text-base font-semibold text-gray-900 mt-0.5">{Math.round(next.frequency)}</p>
                 </div>
               ) : null}
               {typeof next.intensity === "number" ? (
                 <div className="rounded-md bg-white/80 border border-amber-100 px-3 py-2">
-                  <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Est. intensity</p>
-                  <p className="text-base font-semibold text-gray-900 mt-0.5">{next.intensity.toFixed(1)}</p>
+                  <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Est. intensity (1–10)</p>
+                  <p className="text-base font-semibold text-gray-900 mt-0.5">
+                    {next.intensity.toFixed(1)}
+                    <span className="text-gray-500 font-normal text-sm"> /10</span>
+                  </p>
                 </div>
               ) : null}
             </div>

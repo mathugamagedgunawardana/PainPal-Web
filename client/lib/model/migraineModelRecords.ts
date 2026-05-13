@@ -244,13 +244,20 @@ export function normalizeNextAttackForClient(raw: NextAttackApiResponse | null):
     }
   }
   const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : null)
+  const dur = num(reg.Duration ?? reg.duration)
+  const freqRaw = num(reg.Frequency ?? reg.frequency)
+  const intenRaw = num(reg.Intensity ?? reg.intensity)
+  const frequency =
+    freqRaw == null ? null : Math.round(Math.min(31, Math.max(0, freqRaw)))
+  const intensity =
+    intenRaw == null ? null : Math.round(Math.min(10, Math.max(1, intenRaw)) * 10) / 10
   return {
     basedOnRecords: raw.based_on_records ?? 0,
     predictedType: na.type?.label ?? '',
     typeProbabilities: na.type?.probabilities ?? {},
-    duration: num(reg.Duration ?? reg.duration),
-    frequency: num(reg.Frequency ?? reg.frequency),
-    intensity: num(reg.Intensity ?? reg.intensity),
+    duration: dur,
+    frequency,
+    intensity,
     symptomsLikely: likely,
   }
 }

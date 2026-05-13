@@ -297,9 +297,9 @@ export default function PatientAnalyticsPage() {
               ) : null}
               {typeof data.nextAttack.frequency === 'number' ? (
                 <div className="rounded-lg bg-white border border-amber-100 p-3">
-                  <p className="text-xs text-amber-800 font-medium uppercase">Est. frequency</p>
+                  <p className="text-xs text-amber-800 font-medium uppercase">Est. episodes / mo</p>
                   <p className="text-base font-semibold text-gray-900 mt-0.5">
-                    {data.nextAttack.frequency.toFixed(1)}
+                    {Math.round(data.nextAttack.frequency)}
                   </p>
                 </div>
               ) : null}
@@ -308,6 +308,7 @@ export default function PatientAnalyticsPage() {
                   <p className="text-xs text-amber-800 font-medium uppercase">Est. intensity</p>
                   <p className="text-base font-semibold text-gray-900 mt-0.5">
                     {data.nextAttack.intensity.toFixed(1)}
+                    <span className="text-gray-500 font-normal text-sm"> /10</span>
                   </p>
                 </div>
               ) : null}

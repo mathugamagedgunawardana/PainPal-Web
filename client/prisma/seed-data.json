@@ -1,0 +1,231 @@
+{
+  "meta": {
+    "description": "Static seed payload mirrored from client/prisma/seed.ts (no DB ids; dates as ISO date strings where the seed uses parseDate).",
+    "seedPassword": "SeedPassword123!",
+    "saltRounds": 10,
+    "csvImportMarker": "trainingData_seed",
+    "trainingDataDirectory": "model/text/Data/traningData",
+    "csvFilePattern": "patient_{patientNumber}_migraine_attacks.csv",
+    "episodeMonthSpread": 15,
+    "episodeAnchorNote": "Episodes use randomEpisodeStartUtc(anchor=now UTC truncated to hour, spreadMonths=15, patientNumber, rowIndex)."
+  },
+  "clinic": {
+    "name": "Headache & Migraine Center",
+    "address": "100 Medical Plaza, San Francisco, CA"
+  },
+  "doctor": {
+    "user": {
+      "email": "dr.johnson@clinic.example.com",
+      "role": "DOCTOR",
+      "googleId": "seed-dr.johnson@clinic.example.com"
+    },
+    "profile": {
+      "name": "Dr. Johnson",
+      "specialization": "Neurology / Migraine",
+      "clinicName": "Headache & Migraine Center"
+    }
+  },
+  "patients": [
+    {
+      "seedPatientNumber": 1,
+      "csvDiversificationProfile": "Sarah: aura-heavy — Visual/Sensory 1, Dysphasia alternates, Phonophobia/Photophobia 1, Vertigo/Tinnitus 0, Type Migraine with aura",
+      "user": {
+        "email": "sarah.chen@email.com",
+        "role": "PATIENT",
+        "googleId": "seed-sarah.chen@email.com"
+      },
+      "profile": {
+        "name": "Sarah Chen",
+        "ageAtSeed": 34,
+        "dobNote": "yearsAgo(age) from seed run time",
+        "gender": "Female",
+        "phone": "+1 (555) 123-4567",
+        "address": "123 Oak Street, San Francisco, CA",
+        "condition": "Chronic Migraine with Aura",
+        "email": "sarah.chen@email.com"
+      },
+      "patientDoctorLink": { "linkStatus": "ACTIVE" },
+      "medicationGroups": [
+        {
+          "name": "Acute Treatment Protocol",
+          "groupType": "RESCUE",
+          "medications": ["Sumatriptan 50mg", "Topiramate 25mg"],
+          "medicationSchedule": [
+            { "name": "Sumatriptan 50mg", "tablets": 1, "time": "09:00" },
+            { "name": "Topiramate 25mg", "tablets": 1, "time": "21:00" }
+          ],
+          "color": "blue",
+          "adherenceRate": 78
+        },
+        {
+          "name": "Preventive Care Regimen",
+          "groupType": "PREVENTIVE",
+          "medications": ["Topiramate 25mg"],
+          "color": "purple",
+          "adherenceRate": 92
+        },
+        {
+          "name": "Alternative Relief Protocol",
+          "groupType": "RESCUE",
+          "medications": ["Ibuprofen 400mg"],
+          "color": "teal",
+          "adherenceRate": 85
+        }
+      ],
+      "medicationLogs": [
+        {
+          "medicationName": "Sumatriptan 50mg",
+          "medicationType": "RESCUE",
+          "medicationGroupName": "Acute Treatment Protocol",
+          "frequency": "As needed",
+          "adherenceRate": 78,
+          "datetimeTakenDate": "2024-12-15",
+          "dosageNote": "Derived in seed as last token of name: 50mg"
+        },
+        {
+          "medicationName": "Topiramate 25mg",
+          "medicationType": "PREVENTIVE",
+          "medicationGroupName": "Acute Treatment Protocol",
+          "frequency": "Daily",
+          "adherenceRate": 92,
+          "datetimeTakenDate": "2024-12-16",
+          "dosageNote": "25mg"
+        },
+        {
+          "medicationName": "Ibuprofen 400mg",
+          "medicationType": "RESCUE",
+          "medicationGroupName": "Alternative Relief Protocol",
+          "frequency": "As needed",
+          "adherenceRate": 85,
+          "datetimeTakenDate": "2024-12-14",
+          "dosageNote": "400mg"
+        }
+      ],
+      "appointments": [
+        {
+          "appointmentDate": "2024-12-20",
+          "appointmentType": "Follow-up",
+          "status": "SCHEDULED",
+          "communications": [
+            {
+              "communicationType": "Reminder",
+              "message": "Appointment reminder sent",
+              "channel": "SMS"
+            }
+          ]
+        },
+        {
+          "appointmentDate": "2024-12-10",
+          "appointmentType": "Regular Check-up",
+          "status": "COMPLETED",
+          "clinicalNotes": [
+            {
+              "noteContent": "Patient reports increased frequency. Adjusted medication dosage."
+            }
+          ],
+          "communications": [
+            {
+              "communicationType": "Message",
+              "message": "Medication refill approved",
+              "channel": "Email"
+            }
+          ]
+        },
+        {
+          "appointmentDate": "2024-11-15",
+          "appointmentType": "Initial Consultation",
+          "status": "COMPLETED",
+          "clinicalNotes": [
+            {
+              "noteContent": "Initial assessment completed. Prescribed preventive treatment."
+            }
+          ],
+          "appointmentFiles": [
+            {
+              "title": "Baseline intake questionnaire",
+              "fileUrl": "https://example.com/patient-intake.pdf",
+              "fileName": "intake.pdf",
+              "mimeType": "application/pdf"
+            }
+          ]
+        }
+      ],
+      "migraineEventsFromCsv": {
+        "relativePath": "model/text/Data/traningData/patient_1_migraine_attacks.csv",
+        "note": "Each row is diversified then buildSymptomsAndTriggers / deriveSeverity / deriveDurationText / deriveEffectiveness / trainingFieldsFromRow applied; startDatetime from randomEpisodeStartUtc."
+      }
+    },
+    {
+      "seedPatientNumber": 2,
+      "csvDiversificationProfile": "John: vestibular — Vertigo/Tinnitus 1, Hypoacusis/Diplopia alternate, Visual/Sensory/Dysphasia 0, Defect 0, Type Vestibular migraine",
+      "user": {
+        "email": "john.doe@email.com",
+        "role": "PATIENT",
+        "googleId": "seed-john.doe@email.com"
+      },
+      "profile": {
+        "name": "John Doe",
+        "ageAtSeed": 42,
+        "dobNote": "yearsAgo(age) from seed run time",
+        "gender": "Male",
+        "phone": "+1 (555) 234-5678",
+        "address": "456 Maple Ave, Los Angeles, CA",
+        "condition": "Episodic Migraine",
+        "email": "john.doe@email.com"
+      },
+      "patientDoctorLink": { "linkStatus": "ACTIVE" },
+      "migraineEventsFromCsv": {
+        "relativePath": "model/text/Data/traningData/patient_2_migraine_attacks.csv",
+        "note": "Same pipeline as patient 1; deleteCsvSeededEventsForPatient before re-import."
+      }
+    },
+    {
+      "seedPatientNumber": 3,
+      "csvDiversificationProfile": "Emily: hormonal — Nausea 1, Vomit/Frequency alternate, Visual/Sensory/Dysphasia/Vertigo/Tinnitus 0, Type Menstrual migraine",
+      "user": {
+        "email": "emily.smith@email.com",
+        "role": "PATIENT",
+        "googleId": "seed-emily.smith@email.com"
+      },
+      "profile": {
+        "name": "Emily Smith",
+        "ageAtSeed": 28,
+        "dobNote": "yearsAgo(age) from seed run time",
+        "gender": "Female",
+        "phone": "+1 (555) 345-6789",
+        "address": "789 Pine Rd, Seattle, WA",
+        "condition": "Menstrual Migraine",
+        "email": "emily.smith@email.com"
+      },
+      "patientDoctorLink": { "linkStatus": "ACTIVE" },
+      "migraineEventsFromCsv": {
+        "relativePath": "model/text/Data/traningData/patient_3_migraine_attacks.csv",
+        "note": "Same pipeline as patient 1; deleteCsvSeededEventsForPatient before re-import."
+      }
+    },
+    {
+      "seedPatientNumber": 4,
+      "csvDiversificationProfile": "Michael: chronic without aura — Nausea/Photophobia/Phonophobia/Frequency/Duration 1, aura fields 0, Type Chronic migraine",
+      "user": {
+        "email": "michael.j@email.com",
+        "role": "PATIENT",
+        "googleId": "seed-michael.j@email.com"
+      },
+      "profile": {
+        "name": "Michael Johnson",
+        "ageAtSeed": 51,
+        "dobNote": "yearsAgo(age) from seed run time",
+        "gender": "Male",
+        "phone": "+1 (555) 456-7890",
+        "address": "321 Elm St, Boston, MA",
+        "condition": "Chronic Migraine",
+        "email": "michael.j@email.com"
+      },
+      "patientDoctorLink": { "linkStatus": "ACTIVE" },
+      "migraineEventsFromCsv": {
+        "relativePath": "model/text/Data/traningData/patient_4_migraine_attacks.csv",
+        "note": "Same pipeline as patient 1; deleteCsvSeededEventsForPatient before re-import."
+      }
+    }
+  ]
+}
