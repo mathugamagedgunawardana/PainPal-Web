@@ -9,6 +9,7 @@ For each attack row, this builds a supervised sample where:
 
 from __future__ import annotations
 
+import math
 import os
 from typing import Any
 
@@ -194,6 +195,64 @@ def _transform_feature_frame(X: pd.DataFrame, feature_artifacts: dict[str, Any])
     return df.reindex(columns=feature_artifacts["feature_columns"], fill_value=0)
 
 
+def _extract_numeric_history(records: list[dict[str, Any]], key: str) -> list[float]:
+    """Collect finite positive values for a field across the patient's model rows."""
+    out: list[float] = []
+    for r in records:
+        if key not in r:
+            continue
+        try:
+            v = float(r[key])
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(v) and v > 0:
+            out.append(v)
+    return out
+
+
+def _adjust_duration_hours(records: list[dict[str, Any]], raw: float) -> float:
+    """
+    Anchor predicted duration to this patient's logged hours so RF extrapolation
+    does not drift far from observed attack lengths (e.g. 1–2 h vs 12 h).
+    """
+    durs = sorted(_extract_numeric_history(records, "Duration"))
+    raw = float(raw)
+    if not durs:
+        return float(max(0.5, min(72.0, raw)))
+
+    med = float(np.median(durs))
+    p25 = float(np.percentile(durs, 25))
+    p75 = float(np.percentile(durs, 75))
+    iqr = max(p75 - p25, 0.25)
+    # Weight heavily toward the patient's typical duration; allow modest model nudge.
+    blended = 0.12 * raw + 0.88 * med
+    lo = max(0.25, min(p25 - 0.25 * iqr, med * 0.5))
+    hi = min(72.0, max(p75 + 1.5 * iqr, med * 2.0 + 0.5))
+    return float(round(max(lo, min(hi, blended)) * 10) / 10)
+
+
+def _adjust_frequency_per_month(records: list[dict[str, Any]], raw: float) -> int:
+    """Episodes per month style metric: integer, grounded in recent logged rates when possible."""
+    hist = _extract_numeric_history(records, "Frequency")
+    raw = float(raw)
+    if hist:
+        med = float(np.median(hist))
+        blended = 0.35 * raw + 0.65 * med
+    else:
+        blended = raw
+    return int(max(0, min(31, round(blended))))
+
+
+def _intensity_training_to_severity10(raw: float) -> float:
+    """
+    Training CSV Intensity is 1–3 (coarse); map to an approximate 1–10 severity for UI.
+    Aligns with severityToTrainingIntensity bands used when building records.
+    """
+    t = float(np.clip(raw, 1.0, 3.0))
+    sev = 1.0 + (t - 1.0) * 4.5
+    return float(round(float(np.clip(sev, 1.0, 10.0)) * 10) / 10)
+
+
 def run_next_attack_pipeline(data_path: str | None = None, data_dir: str | None = None) -> dict[str, Any]:
     """
     Train next-attack models and save a bundle under artifacts/next_attack_bundle.joblib.
@@ -293,9 +352,15 @@ def predict_next_attack(records: list[dict[str, Any]], bundle: dict[str, Any]) -
         }
 
     for col, model in bundle.get("models_reg", {}).items():
-        pred = float(model.predict(X)[0])
-        if col in {"Duration", "Frequency", "Intensity"}:
-            pred = max(0.0, pred)
+        raw = float(model.predict(X)[0])
+        if col == "Duration":
+            pred = _adjust_duration_hours(records, raw)
+        elif col == "Frequency":
+            pred = int(_adjust_frequency_per_month(records, raw))
+        elif col == "Intensity":
+            pred = _intensity_training_to_severity10(max(0.0, raw))
+        else:
+            pred = max(0.0, raw)
         out["next_attack"]["regression"][col] = pred
 
     for col, model in bundle.get("models_bin", {}).items():

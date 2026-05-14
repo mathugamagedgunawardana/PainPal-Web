@@ -11,10 +11,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 import joblib
 import numpy as np
 import pandas as pd
+
+_env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(_env_path)
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -27,6 +32,23 @@ from run_pipeline import run_pipeline  # noqa: E402
 from train_next_attack import run_next_attack_pipeline, predict_next_attack  # noqa: E402
 
 _serving: dict[str, Any] = {}
+
+
+def _parse_cors_origins() -> list[str]:
+    raw = os.getenv("CORS_ORIGINS", "").strip()
+    if not raw:
+        return []
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+def _pipeline_routes_enabled() -> bool:
+    """Heavy training endpoints off by default when MODEL_API_ENV=production."""
+    explicit = os.getenv("ALLOW_PIPELINE_ROUTES", "").strip().lower()
+    if explicit in ("1", "true", "yes"):
+        return True
+    if explicit in ("0", "false", "no"):
+        return False
+    return os.getenv("MODEL_API_ENV", "development").strip().lower() != "production"
 
 
 def _artifact_path(name: str) -> Path:
@@ -177,6 +199,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Migraine model API", lifespan=lifespan)
 
+_cors_origins = _parse_cors_origins()
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
 
 class PredictRequest(BaseModel):
     """One or more rows with the same columns as training CSV (no target column required)."""
@@ -193,6 +225,11 @@ def _resolve_under_text(p: str | None) -> str | None:
     return str(path)
 
 
+@app.get("/")
+def root():
+    return {"service": "migraine-model-api", "docs": "/docs", "health": "/health"}
+
+
 @app.get("/health")
 def health():
     ok = "model" in _serving
@@ -203,6 +240,12 @@ def health():
         "has_next_attack_bundle": _artifact_path("next_attack_bundle.joblib").is_file(),
         "error": _serving.get("error"),
     }
+
+
+@app.get("/api/health")
+def api_health():
+    """Tiny probe for scripts, proxies, or smoke tests (GET only)."""
+    return {"status": "ok", "service": "migraine-model-api"}
 
 
 @app.post("/predict/next-attack")
@@ -237,6 +280,8 @@ async def pipeline_run(
     Run the full training pipeline (writes pkls and artifacts under model/text).
     Paths are resolved relative to model/text when not absolute.
     """
+    if not _pipeline_routes_enabled():
+        raise HTTPException(status_code=403, detail="Pipeline routes are disabled in this environment.")
     data_path = _resolve_under_text(data_path)
     data_dir = _resolve_under_text(data_dir)
     stratify = stratify_by_patient
@@ -272,6 +317,8 @@ async def pipeline_run_next(
     Use POST from scripts/curl; GET is supported so you can trigger training from a browser
     during local development (e.g. http://127.0.0.1:8000/pipeline/run-next ).
     """
+    if not _pipeline_routes_enabled():
+        raise HTTPException(status_code=403, detail="Pipeline routes are disabled in this environment.")
     data_path = _resolve_under_text(data_path)
     data_dir = _resolve_under_text(data_dir)
 
@@ -296,4 +343,6 @@ async def pipeline_run_next(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    host = os.getenv("MODEL_SERVER_HOST", "0.0.0.0")
+    port = int(os.getenv("MODEL_SERVER_PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)

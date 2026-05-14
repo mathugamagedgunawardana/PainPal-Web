@@ -26,7 +26,6 @@ type FlutterBody = {
   Ataxia?: number
   Conscience?: number
   Paresthesia?: number
-  DPF?: string | number
   patient_id?: string
   attack_id?: string
   age?: number
@@ -106,7 +105,6 @@ export async function POST(req: NextRequest) {
     source: 'painpal-flutter',
     location: body.Location ?? '',
     character: body.Character ?? '',
-    dpf: body.DPF ?? '',
     attack_id: body.attack_id ?? null,
     age: body.age ?? null,
   })
@@ -140,7 +138,6 @@ export async function POST(req: NextRequest) {
         ataxia: body.Ataxia ?? undefined,
         conscience: body.Conscience ?? undefined,
         paresthesia: body.Paresthesia ?? undefined,
-        dpf: typeof body.DPF === 'number' ? body.DPF : undefined,
         migraineType,
         migraineTypeConfidence: 72,
       },

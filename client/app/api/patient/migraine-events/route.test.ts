@@ -71,7 +71,7 @@ describe('GET /api/patient/migraine-events', () => {
         trainingDuration: null,
         duration: '3 hours',
         trainingFrequency: 2,
-        episodeNotes: '{"location":"left","character":"throbbing","durationHours":5,"dpf":"3 days"}',
+        episodeNotes: '{"location":"left","character":"throbbing","durationHours":5}',
         severity: 8,
         migraineType: 'migraine-with-aura',
         csvMigraineType: null,
@@ -91,7 +91,6 @@ describe('GET /api/patient/migraine-events', () => {
         ataxia: 0,
         conscience: 0,
         paresthesia: 0,
-        dpf: null,
       },
       {
         id: 'e2',
@@ -119,7 +118,6 @@ describe('GET /api/patient/migraine-events', () => {
         ataxia: null,
         conscience: null,
         paresthesia: null,
-        dpf: 7,
       },
     ])
 
@@ -159,7 +157,6 @@ describe('GET /api/patient/migraine-events', () => {
           ataxia: 0,
           conscience: 0,
           paresthesia: 0,
-          dpf: '3 days',
         },
         {
           id: 'e2',
@@ -187,7 +184,6 @@ describe('GET /api/patient/migraine-events', () => {
           ataxia: 0,
           conscience: 0,
           paresthesia: 0,
-          dpf: '7',
         },
       ],
     })

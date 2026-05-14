@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -14,8 +15,6 @@ import {
   AlertTriangle,
   Activity,
   Pill,
-  FileText,
-  MessageSquare,
   Clock,
   TrendingUp,
   MapPin,
@@ -26,21 +25,24 @@ import {
   Shield,
   CheckCircle,
   AlertCircle,
-  Download,
   Loader2,
   PanelLeft,
   PanelLeftClose,
   Users,
 } from 'lucide-react'
 import { EpisodeHistoryTab } from '@/components/doctor/EpisodeHistoryTab'
-import { MedicationsTab } from '@/components/doctor/MedicationsTab'
-import { AppointmentsTab } from '@/components/doctor/AppointmentsTab'
-import { NotesTab } from '@/components/doctor/NotesTab'
+import { MedicationsTab, type MedicationGroupRow } from '@/components/doctor/MedicationsTab'
+import {
+  AppointmentsTab,
+  type AppointmentRow,
+  type UnlinkedNoteRow,
+  type UnlinkedCommRow,
+} from '@/components/doctor/AppointmentsTab'
 import { ReportsTab } from '@/components/doctor/ReportsTab'
-import { CommunicationTab } from '@/components/doctor/CommunicationTab'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { FloatingChatIcon } from '@/components/chat/FloatingChatIcon'
 import PatientAnalyticsPredictionPage from '@/components/doctor/PatientAnalyticsPredictionPage'
+import { DoctorPatientAiSummaryCard } from '@/components/doctor/DoctorPatientAiSummaryCard'
 import { cn } from '@/lib/utils'
 
 const DOCTOR_PATIENTS_LIST_COLLAPSED_KEY = 'doctor-patients-list-collapsed'
@@ -76,11 +78,8 @@ type EpisodeHistoryItem = {
 }
 
 type MedicationItem = { name: string; frequency: string; adherence: number; lastTaken: string; groupId: number }
-type AppointmentItem = { date: string; type: string; doctor: string; status: string }
-type NoteItem = { date: string; note: string; author: string }
-type CommunicationItem = { date: string; type: string; message: string; channel: string }
-
 export default function PatientsPage() {
+  const searchParams = useSearchParams()
   const [searchTerm, setSearchTerm] = useState('')
   const [riskFilter, setRiskFilter] = useState('all')
   const [patients, setPatients] = useState<PatientListItem[]>([])
@@ -90,9 +89,10 @@ export default function PatientsPage() {
   const [detailData, setDetailData] = useState<{
     episodeHistory: EpisodeHistoryItem[]
     medications: MedicationItem[]
-    appointments: AppointmentItem[]
-    notes: NoteItem[]
-    communications: CommunicationItem[]
+    medicationGroups: MedicationGroupRow[]
+    appointments: AppointmentRow[]
+    unlinkedNotes: UnlinkedNoteRow[]
+    unlinkedCommunications: UnlinkedCommRow[]
   } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -187,17 +187,19 @@ export default function PatientsPage() {
         profile: PatientListItem
         episodeHistory: EpisodeHistoryItem[]
         medications: MedicationItem[]
-        appointments: AppointmentItem[]
-        notes: NoteItem[]
-        communications: CommunicationItem[]
+        medicationGroups?: MedicationGroupRow[]
+        appointments: AppointmentRow[]
+        unlinkedNotes?: UnlinkedNoteRow[]
+        unlinkedCommunications?: UnlinkedCommRow[]
       }) => {
         setSelectedPatient(data.profile)
         setDetailData({
           episodeHistory: data.episodeHistory ?? [],
           medications: data.medications ?? [],
+          medicationGroups: data.medicationGroups ?? [],
           appointments: data.appointments ?? [],
-          notes: data.notes ?? [],
-          communications: data.communications ?? [],
+          unlinkedNotes: data.unlinkedNotes ?? [],
+          unlinkedCommunications: data.unlinkedCommunications ?? [],
         })
       })
       .catch((err) => {
@@ -207,6 +209,14 @@ export default function PatientsPage() {
         setDetailLoading(false)
       })
   }, [])
+
+  useEffect(() => {
+    const id = searchParams.get('patient')
+    if (!id || patients.length === 0) return
+    if (!patients.some((p) => p.id === id)) return
+    if (selectedPatient?.id === id) return
+    fetchPatientDetail(id)
+  }, [searchParams, patients, selectedPatient?.id, fetchPatientDetail])
 
   const handleSelectPatient = (patient: PatientListItem) => {
     if (selectedPatient?.id === patient.id) return
@@ -221,10 +231,10 @@ export default function PatientsPage() {
   })
 
   const episodeHistory = detailData?.episodeHistory ?? []
-  const medications = detailData?.medications ?? []
+  const medicationGroups = detailData?.medicationGroups ?? []
   const appointments = detailData?.appointments ?? []
-  const notes = detailData?.notes ?? []
-  const communications = detailData?.communications ?? []
+  const unlinkedNotes = detailData?.unlinkedNotes ?? []
+  const unlinkedCommunications = detailData?.unlinkedCommunications ?? []
 
   return (
     <div className="min-h-screen bg-gradient-to-br via-purple-50 to-teal-50 p-3 sm:p-4 md:p-6 lg:p-8">
@@ -515,6 +525,10 @@ export default function PatientsPage() {
                 <PatientAnalyticsPredictionPage embedded patientId={selectedPatient.id} patientName={selectedPatient.name} />
               </section>
 
+              <section className="scroll-mt-6" aria-label="AI clinical summary">
+                <DoctorPatientAiSummaryCard patientId={selectedPatient.id} />
+              </section>
+
               {/* Patient At-A-Glance Summary */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                 {/* Clinical Status Overview */}
@@ -610,8 +624,8 @@ export default function PatientsPage() {
                       </TabsTrigger>
                       <TabsTrigger value="care" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-3 sm:px-4">
                         <Calendar className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
-                        <span className="hidden sm:inline">Appointments, notes & more</span>
-                        <span className="sm:hidden">More</span>
+                        <span className="hidden sm:inline">Appointments & visit records</span>
+                        <span className="sm:hidden">Visits</span>
                       </TabsTrigger>
                     </TabsList>
 
@@ -626,46 +640,23 @@ export default function PatientsPage() {
                         <h3 id="patient-medications-heading" className="sr-only">
                           Medications
                         </h3>
-                        <MedicationsTab medications={medications} />
+                        <MedicationsTab
+                          patientId={selectedPatient.id}
+                          groups={medicationGroups}
+                          onSaved={() => fetchPatientDetail(selectedPatient.id)}
+                        />
                       </section>
                     </TabsContent>
 
-                    <TabsContent value="care" className="mt-0">
-                      <Tabs defaultValue="appointments" className="w-full">
-                        <TabsList className="mb-4 bg-gray-50 border border-gray-200 p-1 rounded-lg flex flex-wrap w-full justify-start gap-0.5">
-                          <TabsTrigger value="appointments" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
-                            <Calendar className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
-                            <span className="hidden xs:inline">Appointments</span>
-                            <span className="xs:hidden">Appts</span>
-                          </TabsTrigger>
-                          <TabsTrigger value="notes" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
-                            <FileText className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
-                            Notes
-                          </TabsTrigger>
-                          <TabsTrigger value="reports" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
-                            <Download className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
-                            <span className="hidden xs:inline">Reports</span>
-                            <span className="xs:hidden">Files</span>
-                          </TabsTrigger>
-                          <TabsTrigger value="communication" className="rounded-md text-xs sm:text-sm px-2 sm:px-3">
-                            <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
-                            <span className="hidden xs:inline">Communication</span>
-                            <span className="xs:hidden">Comm</span>
-                          </TabsTrigger>
-                        </TabsList>
-                        <TabsContent value="appointments">
-                          <AppointmentsTab appointments={appointments} />
-                        </TabsContent>
-                        <TabsContent value="notes">
-                          <NotesTab notes={notes} />
-                        </TabsContent>
-                        <TabsContent value="reports">
-                          <ReportsTab />
-                        </TabsContent>
-                        <TabsContent value="communication">
-                          <CommunicationTab communications={communications} />
-                        </TabsContent>
-                      </Tabs>
+                    <TabsContent value="care" className="mt-0 space-y-8">
+                      <AppointmentsTab
+                        patientId={selectedPatient.id}
+                        appointments={appointments}
+                        unlinkedNotes={unlinkedNotes}
+                        unlinkedCommunications={unlinkedCommunications}
+                        onUpdated={() => fetchPatientDetail(selectedPatient.id)}
+                      />
+                      <ReportsTab />
                     </TabsContent>
                   </Tabs>
                 </CardContent>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/middleware'
 import { getDoctorUserId } from '@/lib/auth/getDoctorUserId'
 import { prisma } from '@/lib/prisma'
+import { tryGetModelApiBaseUrl } from '@/lib/env/modelApiUrl'
 import {
   fetchNextAttackPredictionWithReason,
   migraineEventsToModelRecords,
@@ -38,7 +39,6 @@ const MIGRAINE_EVENT_MODEL_SELECT = {
   ataxia: true,
   conscience: true,
   paresthesia: true,
-  dpf: true,
 } as const
 
 const TYPE_LABELS: Record<string, string> = {
@@ -196,81 +196,83 @@ export async function GET(
       const records = migraineEventsToModelRecords(events as MigraineEventDbInput[], patientDob)
 
       try {
-        const modelBaseUrl = (process.env.MODEL_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
-        const resp = await fetch(`${modelBaseUrl}/predict`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ records }),
-        })
+        const modelBaseUrl = tryGetModelApiBaseUrl()
+        if (modelBaseUrl) {
+          const resp = await fetch(`${modelBaseUrl}/predict`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ records }),
+          })
 
-        if (resp.ok) {
-          const prediction = (await resp.json()) as ModelPredictResponse
-          const bucket = new Map<string, { scoreSum: number; count: number }>()
-          for (const key of Object.keys(TYPE_LABELS)) {
-            bucket.set(key, { scoreSum: 0, count: 0 })
-          }
+          if (resp.ok) {
+            const prediction = (await resp.json()) as ModelPredictResponse
+            const bucket = new Map<string, { scoreSum: number; count: number }>()
+            for (const key of Object.keys(TYPE_LABELS)) {
+              bucket.set(key, { scoreSum: 0, count: 0 })
+            }
 
-          for (let i = 0; i < prediction.predicted_type.length; i++) {
-            const raw = prediction.predicted_type[i]
-            const key = enumFromModelLabel(raw)
-            if (!key) continue
+            for (let i = 0; i < prediction.predicted_type.length; i++) {
+              const raw = prediction.predicted_type[i]
+              const key = enumFromModelLabel(raw)
+              if (!key) continue
 
-            let score = 1
-            const probObj = prediction.probabilities?.[i]
-            if (probObj) {
-              const direct = probObj[raw]
-              if (typeof direct === 'number' && Number.isFinite(direct)) {
-                score = direct
-              } else {
-                const normalized = normalizeLabel(raw)
-                for (const [label, value] of Object.entries(probObj)) {
-                  if (normalizeLabel(label) === normalized && Number.isFinite(value)) {
-                    score = value
-                    break
+              let score = 1
+              const probObj = prediction.probabilities?.[i]
+              if (probObj) {
+                const direct = probObj[raw]
+                if (typeof direct === 'number' && Number.isFinite(direct)) {
+                  score = direct
+                } else {
+                  const normalized = normalizeLabel(raw)
+                  for (const [label, value] of Object.entries(probObj)) {
+                    if (normalizeLabel(label) === normalized && Number.isFinite(value)) {
+                      score = value
+                      break
+                    }
                   }
                 }
               }
+
+              const entry = bucket.get(key)
+              if (entry) {
+                entry.scoreSum += score
+                entry.count += 1
+              }
             }
 
-            const entry = bucket.get(key)
-            if (entry) {
-              entry.scoreSum += score
-              entry.count += 1
-            }
+            const predictions = Object.keys(TYPE_LABELS).map((key) => {
+              const row = bucket.get(key) ?? { scoreSum: 0, count: 0 }
+              const probability = row.count > 0 ? (row.scoreSum / row.count) * 100 : 0
+              const idx = prediction.predicted_type.findIndex((raw) => enumFromModelLabel(raw) === key)
+              const sampleSymptoms = (idx >= 0 ? events[idx]?.detectedSymptoms : undefined)?.slice(0, 4) ?? []
+              return {
+                type: labelFromEnum(key),
+                probability: Math.round(probability * 10) / 10,
+                summary:
+                  row.count > 0
+                    ? `${descriptionFromEnum(key)} Inferred from ${row.count} recent episodes.`
+                    : descriptionFromEnum(key),
+                keySymptoms: sampleSymptoms.length > 0 ? sampleSymptoms : ['No dominant symptoms captured'],
+                impact: impactFromSignals(sampleSymptoms, probability),
+              }
+            })
+
+            const sorted = predictions.sort((a, b) => b.probability - a.probability)
+            const top = sorted[0]
+            return NextResponse.json({
+              generatedAt: new Date().toISOString(),
+              source: 'live model inference from patient migraine events',
+              predictedType: top?.type ?? null,
+              confidence: top?.probability ?? 0,
+              summary: top?.summary ?? 'No prediction available yet',
+              keySymptoms: top?.keySymptoms ?? [],
+              predictions: sorted,
+              nextAttack,
+              nextAttackUnavailableReason,
+              nextAttackDisclaimer:
+                'Forecasts are probabilistic and for decision support only—not a diagnosis or emergency guidance.',
+            })
           }
-
-          const predictions = Object.keys(TYPE_LABELS).map((key) => {
-            const row = bucket.get(key) ?? { scoreSum: 0, count: 0 }
-            const probability = row.count > 0 ? (row.scoreSum / row.count) * 100 : 0
-            const idx = prediction.predicted_type.findIndex((raw) => enumFromModelLabel(raw) === key)
-            const sampleSymptoms = (idx >= 0 ? events[idx]?.detectedSymptoms : undefined)?.slice(0, 4) ?? []
-            return {
-              type: labelFromEnum(key),
-              probability: Math.round(probability * 10) / 10,
-              summary:
-                row.count > 0
-                  ? `${descriptionFromEnum(key)} Inferred from ${row.count} recent episodes.`
-                  : descriptionFromEnum(key),
-              keySymptoms: sampleSymptoms.length > 0 ? sampleSymptoms : ['No dominant symptoms captured'],
-              impact: impactFromSignals(sampleSymptoms, probability),
-            }
-          })
-
-          const sorted = predictions.sort((a, b) => b.probability - a.probability)
-          const top = sorted[0]
-          return NextResponse.json({
-            generatedAt: new Date().toISOString(),
-            source: 'live model inference from patient migraine events',
-            predictedType: top?.type ?? null,
-            confidence: top?.probability ?? 0,
-            summary: top?.summary ?? 'No prediction available yet',
-            keySymptoms: top?.keySymptoms ?? [],
-            predictions: sorted,
-            nextAttack,
-            nextAttackUnavailableReason,
-            nextAttackDisclaimer:
-              'Forecasts are probabilistic and for decision support only—not a diagnosis or emergency guidance.',
-          })
         }
       } catch (error) {
         console.error('Live patient analytics model inference failed:', error)

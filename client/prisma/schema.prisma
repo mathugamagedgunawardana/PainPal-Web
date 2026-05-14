@@ -51,6 +51,7 @@ model DoctorProfile {
   clinicalNotes   ClinicalNote[]
   communications  Communication[]
   conversations   Conversation[]
+  appointmentFiles AppointmentFile[]
 }
 
 model Clinic {
@@ -166,7 +167,6 @@ model MigraineEvent {
   ataxia             Int?
   conscience         Int?
   paresthesia        Int?
-  dpf                Int?
   studyType          String?        // CSV "Type"
   csvMigraineType    String?        // CSV "MigraineType" when present
   /** Set for CSV-imported rows so seed can replace them idempotently */
@@ -254,8 +254,28 @@ model Appointment {
   appointmentDate  DateTime
   appointmentType  String          // e.g., "Follow-up", "Regular Check-up", "Initial Consultation"
   status           AppointmentStatus  // SCHEDULED, COMPLETED, CANCELLED
+  /** Doctor-recorded attendance for this visit (null = not recorded yet). */
+  patientPresent   Boolean?
   notes            String?
   createdAt        DateTime        @default(now())
+
+  clinicalNotes    ClinicalNote[]
+  communications   Communication[]
+  files            AppointmentFile[]
+}
+
+// Doctor-uploaded file metadata linked to a specific visit (use fileUrl for links or future blob storage).
+model AppointmentFile {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  appointmentId   String        @db.ObjectId
+  appointment     Appointment   @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  doctorId        String        @db.ObjectId
+  doctor          DoctorProfile @relation(fields: [doctorId], references: [id])
+  title           String
+  fileUrl         String?
+  fileName        String?
+  mimeType        String?
+  createdAt       DateTime      @default(now())
 }
 
 // Clinical notes written by doctors
@@ -266,6 +286,9 @@ model ClinicalNote {
   
   doctorId         String          @db.ObjectId
   doctor           DoctorProfile   @relation(fields: [doctorId], references: [id])
+
+  appointmentId    String?         @db.ObjectId
+  appointment      Appointment?    @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
   
   noteContent      String          // The actual note text
   createdAt        DateTime        @default(now())
@@ -280,6 +303,9 @@ model Communication {
   
   doctorId         String?         @db.ObjectId
   doctor           DoctorProfile?  @relation(fields: [doctorId], references: [id])
+
+  appointmentId    String?         @db.ObjectId
+  appointment      Appointment?    @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
   
   communicationType String         // e.g., "Reminder", "Message", "Alert"
   message          String
@@ -328,7 +354,9 @@ model MedicationGroup {
   name              String           // e.g., "Acute Treatment Protocol"
   description       String?          // Optional description
   groupType         MedicationType   // PREVENTIVE or RESCUE
-  medications       String[]         // Array of medication names
+  medications       String[]         // Array of medication names (kept in sync with schedule when present)
+  /** Structured rows: name, tablets per dose, time (24h HH:mm or free text e.g. "morning"). */
+  medicationSchedule Json?
   color             String?          // For UI display (e.g., "blue", "purple")
   
   isActive          Boolean          @default(true)

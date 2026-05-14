@@ -108,6 +108,35 @@ function parseDate(isoDate: string): Date {
   return new Date(isoDate + 'T12:00:00.000Z')
 }
 
+/** LCG — deterministic per (patient, row) so re-seeding stays reproducible but dates look varied. */
+function createSeededRng(seed: number): () => number {
+  let state = seed >>> 0
+  return () => {
+    state = (1664525 * state + 1013904223) >>> 0
+    return state / 4294967296
+  }
+}
+
+/**
+ * Random calendar timestamps spread across `spreadMonths` separate months (going backward from anchor).
+ */
+function randomEpisodeStartUtc(anchor: Date, spreadMonths: number, patientNumber: number, rowIndex: number): Date {
+  const rand = createSeededRng((patientNumber * 100003 + rowIndex * 97266353 + spreadMonths) >>> 0)
+  const monthPick = Math.floor(rand() * spreadMonths)
+  const d = new Date(anchor)
+  d.setUTCDate(1)
+  d.setUTCHours(12, 0, 0, 0)
+  d.setUTCMonth(d.getUTCMonth() - monthPick)
+
+  const y = d.getUTCFullYear()
+  const m = d.getUTCMonth()
+  const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
+  const day = 1 + Math.floor(rand() * daysInMonth)
+  const hour = 6 + Math.floor(rand() * 14)
+  const minute = Math.floor(rand() * 60)
+  return new Date(Date.UTC(y, m, day, hour, minute, 0, 0))
+}
+
 function readCsvRows(filePath: string): TrainingAttackRow[] {
   const raw = fs.readFileSync(filePath, 'utf8').trim()
   if (!raw) return []
@@ -217,7 +246,6 @@ function trainingFieldsFromRow(row: TrainingAttackRow, rowIndex: number) {
     ataxia: toInt(row.Ataxia),
     conscience: toInt(row.Conscience),
     paresthesia: toInt(row.Paresthesia),
-    dpf: toInt(row.DPF),
     studyType: row.Type?.trim() || null,
     csvMigraineType: row.MigraineType?.trim() || null,
   }
@@ -403,6 +431,10 @@ async function main() {
       name: 'Acute Treatment Protocol',
       groupType: 'RESCUE',
       medications: ['Sumatriptan 50mg', 'Topiramate 25mg'],
+      medicationSchedule: [
+        { name: 'Sumatriptan 50mg', tablets: 1, time: '09:00' },
+        { name: 'Topiramate 25mg', tablets: 1, time: '21:00' },
+      ],
       color: 'blue',
       adherenceRate: 78,
     },
@@ -461,8 +493,9 @@ async function main() {
     { date: '2024-12-10', type: 'Regular Check-up', status: 'COMPLETED' as const },
     { date: '2024-11-15', type: 'Initial Consultation', status: 'COMPLETED' as const },
   ]
+  const createdAppointmentIds: string[] = []
   for (const a of appointments) {
-    await prisma.appointment.create({
+    const row = await prisma.appointment.create({
       data: {
         patientId: patient1Id,
         doctorId: doctor.id,
@@ -471,42 +504,68 @@ async function main() {
         status: a.status,
       },
     })
+    createdAppointmentIds.push(row.id)
   }
+  const apptFollowUpId = createdAppointmentIds[0]
+  const apptRegularId = createdAppointmentIds[1]
+  const apptInitialId = createdAppointmentIds[2]
   console.log('Created appointments for first patient')
 
-  // 9. Clinical notes for first patient
-  const notes = [
-    { date: '2024-12-10', note: 'Patient reports increased frequency. Adjusted medication dosage.', author: 'Dr. Johnson' },
-    { date: '2024-11-15', note: 'Initial assessment completed. Prescribed preventive treatment.', author: 'Dr. Johnson' },
-  ]
-  for (const n of notes) {
-    await prisma.clinicalNote.create({
-      data: {
-        patientId: patient1Id,
-        doctorId: doctor.id,
-        noteContent: n.note,
-      },
-    })
-  }
+  // 9. Clinical notes linked to visits
+  await prisma.clinicalNote.create({
+    data: {
+      patientId: patient1Id,
+      doctorId: doctor.id,
+      appointmentId: apptRegularId,
+      noteContent: 'Patient reports increased frequency. Adjusted medication dosage.',
+    },
+  })
+  await prisma.clinicalNote.create({
+    data: {
+      patientId: patient1Id,
+      doctorId: doctor.id,
+      appointmentId: apptInitialId,
+      noteContent: 'Initial assessment completed. Prescribed preventive treatment.',
+    },
+  })
   console.log('Created clinical notes for first patient')
 
-  // 10. Communications for first patient
-  const comms = [
-    { date: '2024-12-12', type: 'Reminder', message: 'Appointment reminder sent', channel: 'SMS' },
-    { date: '2024-12-08', type: 'Message', message: 'Medication refill approved', channel: 'Email' },
-  ]
-  for (const c of comms) {
-    await prisma.communication.create({
+  // 10. Communications linked to visits
+  await prisma.communication.create({
+    data: {
+      patientId: patient1Id,
+      doctorId: doctor.id,
+      appointmentId: apptFollowUpId,
+      communicationType: 'Reminder',
+      message: 'Appointment reminder sent',
+      channel: 'SMS',
+    },
+  })
+  await prisma.communication.create({
+    data: {
+      patientId: patient1Id,
+      doctorId: doctor.id,
+      appointmentId: apptRegularId,
+      communicationType: 'Message',
+      message: 'Medication refill approved',
+      channel: 'Email',
+    },
+  })
+  console.log('Created communications for first patient')
+
+  if (apptInitialId) {
+    await prisma.appointmentFile.create({
       data: {
-        patientId: patient1Id,
+        appointmentId: apptInitialId,
         doctorId: doctor.id,
-        communicationType: c.type,
-        message: c.message,
-        channel: c.channel,
+        title: 'Baseline intake questionnaire',
+        fileUrl: 'https://example.com/patient-intake.pdf',
+        fileName: 'intake.pdf',
+        mimeType: 'application/pdf',
       },
     })
+    console.log('Created sample appointment file for first patient')
   }
-  console.log('Created communications for first patient')
 
   // 11. Import CSV attack rows from model/text/Data/traningData for seeded patients 1..4
   const trainingDataDir = path.resolve(__dirname, '..', '..', 'model', 'text', 'Data', 'traningData')
@@ -518,7 +577,10 @@ async function main() {
   ].filter((item): item is { patientNumber: number; profileId: string } => !!item.profileId)
 
   if (fs.existsSync(trainingDataDir)) {
-    const baseDate = new Date('2025-01-01T08:00:00.000Z')
+    /** Episodes land in random days across this many past months (relative to seed run time). */
+    const EPISODE_MONTH_SPREAD = 15
+    const episodeAnchor = new Date()
+    episodeAnchor.setUTCMinutes(0, 0, 0)
 
     for (const item of csvPatientMap) {
       const csvPath = path.join(trainingDataDir, `patient_${item.patientNumber}_migraine_attacks.csv`)
@@ -536,8 +598,12 @@ async function main() {
         const row = diversifiedRowForSeedPatient(item.patientNumber, rows[i], i)
         const { detectedSymptoms, triggers } = buildSymptomsAndTriggers(row)
 
-        const eventDate = new Date(baseDate)
-        eventDate.setUTCDate(baseDate.getUTCDate() - i - (item.patientNumber - 1) * 45)
+        const eventDate = randomEpisodeStartUtc(
+          episodeAnchor,
+          EPISODE_MONTH_SPREAD,
+          item.patientNumber,
+          i
+        )
 
         await prisma.migraineEvent.create({
           data: {

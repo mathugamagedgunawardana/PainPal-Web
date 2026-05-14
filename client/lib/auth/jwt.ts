@@ -2,10 +2,20 @@ import { SignJWT, jwtVerify } from 'jose';
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'your-secret-key-change-in-production'
-);
-const JWT_EXPIRES_IN = '1d'; // Token expires in 7 days
+const JWT_EXPIRES_IN = '1d';
+
+function jwtSecretBytes(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    if (!secret || secret.length < 32) {
+      throw new Error(
+        'JWT_SECRET must be set to a strong value (at least 32 characters) in production.',
+      );
+    }
+    return new TextEncoder().encode(secret);
+  }
+  return new TextEncoder().encode(secret ?? 'your-secret-key-change-in-production');
+}
 
 export interface JWTPayload {
   userId: string;
@@ -27,9 +37,23 @@ export async function signToken(payload: JWTPayload): Promise<string> {
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(JWT_EXPIRES_IN)
-    .sign(JWT_SECRET);
+    .sign(jwtSecretBytes());
   
   return token;
+}
+
+const JWT_QUIET_CODES = new Set([
+  'ERR_JWS_SIGNATURE_VERIFICATION_FAILED',
+  'ERR_JWT_EXPIRED',
+  'ERR_JWT_INVALID',
+  'ERR_JWT_CLAIM_VALIDATION_FAILED',
+])
+
+function jwtErrorCode(error: unknown): string | undefined {
+  if (error && typeof error === 'object' && 'code' in error) {
+    return String((error as { code?: unknown }).code)
+  }
+  return undefined
 }
 
 /**
@@ -37,10 +61,13 @@ export async function signToken(payload: JWTPayload): Promise<string> {
  */
 export async function verifyToken(token: string): Promise<JWTPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, jwtSecretBytes());
     return payload as unknown as JWTPayload;
-  } catch (error) {
-    console.error('JWT verification failed:', error);
+  } catch (error: unknown) {
+    const code = jwtErrorCode(error)
+    if (!code || !JWT_QUIET_CODES.has(code)) {
+      console.error('JWT verification failed:', error);
+    }
     return null;
   }
 }

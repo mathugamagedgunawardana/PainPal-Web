@@ -65,7 +65,6 @@ export async function GET(req: NextRequest) {
         ataxia: row.ataxia ?? 0,
         conscience: row.conscience ?? 0,
         paresthesia: row.paresthesia ?? 0,
-        dpf: row.dpf != null ? String(row.dpf) : (meta.dpf as string) || '',
       }
     })
 

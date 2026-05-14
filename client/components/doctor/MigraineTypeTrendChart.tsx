@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { CartesianGrid, Legend, Line, LineChart, XAxis, YAxis } from "recharts"
 
-type MigraineTypeTrendPoint = {
+export type MigraineTypeTrendPoint = {
   date: string
   chronic: number
   typicalAura: number
@@ -23,14 +23,6 @@ const chartConfig = {
   hemiplegic: { label: "Hemiplegic", color: "#f59e0b" },
   probable: { label: "Probable", color: "#8b5cf6" },
 }
-
-const mockData: MigraineTypeTrendPoint[] = [
-  { date: "Aug", chronic: 6, typicalAura: 4, vestibular: 3, hemiplegic: 1, probable: 5 },
-  { date: "Sep", chronic: 7, typicalAura: 5, vestibular: 2, hemiplegic: 1, probable: 6 },
-  { date: "Oct", chronic: 5, typicalAura: 6, vestibular: 4, hemiplegic: 2, probable: 4 },
-  { date: "Nov", chronic: 8, typicalAura: 4, vestibular: 3, hemiplegic: 1, probable: 7 },
-  { date: "Dec", chronic: 9, typicalAura: 5, vestibular: 4, hemiplegic: 2, probable: 6 },
-]
 
 const lineKeys: Array<keyof typeof chartConfig> = [
   "chronic",
@@ -51,16 +43,22 @@ function getDominantType(latest: MigraineTypeTrendPoint | undefined) {
 }
 
 interface MigraineTypeTrendChartProps {
-  data?: MigraineTypeTrendPoint[]
+  data: MigraineTypeTrendPoint[]
   patientName?: string
+  /** Extra line under the description (e.g. population analytics source hint). */
+  extraDescription?: string
 }
 
-export function MigraineTypeTrendChart({ data = mockData, patientName }: MigraineTypeTrendChartProps) {
-  const latest = data[data.length - 1]
+export function MigraineTypeTrendChart({ data, patientName, extraDescription }: MigraineTypeTrendChartProps) {
+  const latest = data.length > 0 ? data[data.length - 1] : undefined
   const dominantType = getDominantType(latest)
-  const latestTotal = latest
+  const latestMonthTotal = latest
     ? lineKeys.reduce((sum, key) => sum + Number(latest[key]), 0)
     : 0
+  const seriesTotal = data.reduce(
+    (acc, row) => acc + lineKeys.reduce((s, key) => s + Number(row[key]), 0),
+    0
+  )
 
   return (
     <Card className="shadow-lg">
@@ -72,36 +70,55 @@ export function MigraineTypeTrendChart({ data = mockData, patientName }: Migrain
               Migraine Type Trend
             </CardTitle>
             <CardDescription>
-              Model output per migraine event{patientName ? ` for ${patientName}` : ""}
+              Counts from episode{" "}
+              <span className="font-medium">migraineType</span> plus AI insights{" "}
+              <span className="font-medium">migraineType</span>
+              {patientName ? ` for ${patientName}` : ""}
+              {extraDescription ? (
+                <span className="block mt-1 text-xs text-muted-foreground">{extraDescription}</span>
+              ) : null}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">Latest dominant: {dominantType}</Badge>
-            <Badge className="bg-indigo-600">{latestTotal} events</Badge>
+            <Badge variant="secondary">Latest month: {dominantType}</Badge>
+            <Badge className="bg-indigo-600">{seriesTotal} typed</Badge>
+            {latestMonthTotal > 0 && (
+              <Badge variant="outline" className="text-xs">
+                {latestMonthTotal} in latest month
+              </Badge>
+            )}
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="h-[320px] w-full">
-          <LineChart data={data} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" />
-            <YAxis allowDecimals={false} />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <Legend />
-            {lineKeys.map((key) => (
-              <Line
-                key={key}
-                type="monotone"
-                dataKey={key}
-                stroke={`var(--color-${key})`}
-                strokeWidth={2.5}
-                dot={{ r: 3 }}
-                activeDot={{ r: 5 }}
-              />
-            ))}
-          </LineChart>
-        </ChartContainer>
+        {data.length === 0 || seriesTotal === 0 ? (
+          <p className="text-sm text-muted-foreground py-16 text-center">
+            No typed rows in this window. Populate{" "}
+            <span className="font-medium">MigraineEvent.migraineType</span> (sync/model/manual) or{" "}
+            <span className="font-medium">AIDiagnosticInsight</span> records for linked patients.
+          </p>
+        ) : (
+          <ChartContainer config={chartConfig} className="h-[320px] w-full">
+            <LineChart data={data} margin={{ left: 8, right: 8, top: 8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" />
+              <YAxis allowDecimals={false} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Legend />
+              {lineKeys.map((key) => (
+                <Line
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={`var(--color-${key})`}
+                  strokeWidth={2.5}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+              ))}
+            </LineChart>
+          </ChartContainer>
+        )}
       </CardContent>
     </Card>
   )

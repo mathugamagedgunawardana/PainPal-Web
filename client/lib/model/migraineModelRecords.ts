@@ -3,6 +3,8 @@
  * Column names match model/text training CSVs and /predict expectations.
  */
 
+import { tryGetModelApiBaseUrl } from '@/lib/env/modelApiUrl'
+
 export type ModelRecord = {
   Age: number
   Duration: number
@@ -54,7 +56,6 @@ type EventLike = {
   ataxia: number | null
   conscience: number | null
   paresthesia: number | null
-  dpf: number | null
   studyType: string | null
   severity: number
 }
@@ -134,7 +135,7 @@ export function migraineEventToModelRecord(e: EventLike): ModelRecord {
     Ataxia: e.ataxia ?? 0,
     Conscience: e.conscience ?? 0,
     Paresthesia: e.paresthesia ?? 0,
-    DPF: e.dpf ?? 0,
+    DPF: 0,
     Type: e.studyType ?? '',
   }
 }
@@ -202,14 +203,10 @@ export function migraineEventsToModelRecords(
       Ataxia: e.ataxia ?? 0,
       Conscience: e.conscience ?? 0,
       Paresthesia: e.paresthesia ?? 0,
-      DPF: e.dpf ?? 0,
+      DPF: 0,
       Type: typeStr,
     }
   })
-}
-
-export function modelApiBaseUrl(): string {
-  return (process.env.MODEL_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 }
 
 export type NextAttackApiResponse = {
@@ -247,13 +244,20 @@ export function normalizeNextAttackForClient(raw: NextAttackApiResponse | null):
     }
   }
   const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : null)
+  const dur = num(reg.Duration ?? reg.duration)
+  const freqRaw = num(reg.Frequency ?? reg.frequency)
+  const intenRaw = num(reg.Intensity ?? reg.intensity)
+  const frequency =
+    freqRaw == null ? null : Math.round(Math.min(31, Math.max(0, freqRaw)))
+  const intensity =
+    intenRaw == null ? null : Math.round(Math.min(10, Math.max(1, intenRaw)) * 10) / 10
   return {
     basedOnRecords: raw.based_on_records ?? 0,
     predictedType: na.type?.label ?? '',
     typeProbabilities: na.type?.probabilities ?? {},
-    duration: num(reg.Duration ?? reg.duration),
-    frequency: num(reg.Frequency ?? reg.frequency),
-    intensity: num(reg.Intensity ?? reg.intensity),
+    duration: dur,
+    frequency,
+    intensity,
     symptomsLikely: likely,
   }
 }
@@ -271,7 +275,14 @@ export async function fetchNextAttackPredictionWithReason(records: ModelRecord[]
   if (records.length === 0) {
     return { dto: null, unavailableReason: 'No episodes available to forecast from.' }
   }
-  const base = modelApiBaseUrl()
+  const base = tryGetModelApiBaseUrl()
+  if (!base) {
+    return {
+      dto: null,
+      unavailableReason:
+        'MODEL_API_URL is not set. Add it to the Next.js server environment (e.g. .env.local).',
+    }
+  }
   const paths = ['/predict/next-attack', '/predict_next_attack']
   let lastStatus: number | null = null
   let sawNetworkError = false
