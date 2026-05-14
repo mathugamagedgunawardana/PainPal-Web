@@ -2,6 +2,13 @@
 FastAPI server: train via run_pipeline (text), serve XGBoost migraine-type predictions,
 and optional ResNet18 MRI inference (migraine vs other) from model/image/.
 Artifacts for tabular models live under model/text/; MRI weights under model/image/.
+
+Runtime logging (stderr):
+  MODEL_API_LOG_LEVEL=INFO|DEBUG|WARNING (default INFO)
+  MODEL_API_LOG_FORMAT= optional custom logging format string
+  MODEL_API_HTTP_LOG=true|false — log each HTTP request with status and latency (default true)
+  MODEL_API_ACCESS_LOG=true|false — uvicorn access log when using python main.py (default false)
+  MODEL_API_LOG_SKIP_HEALTH=true|false — skip /health and /api/health lines (default true)
 """
 
 from __future__ import annotations
@@ -197,6 +204,7 @@ def predict_mri_from_bytes(image_bytes: bytes) -> dict[str, Any]:
     )
     names = _mri["class_names"]
     conf = max(probs) if probs else None
+    log.debug("MRI inference label=%s confidence=%s", pred_label, conf)
     return {
         "predicted_label": pred_label,
         "confidence": float(conf) if conf is not None else None,
@@ -245,6 +253,8 @@ def predict_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     if "model" not in _serving:
         raise HTTPException(status_code=503, detail=_serving.get("error", "Model not loaded."))
 
+    log.info("POST /predict rows=%s", len(records))
+
     model = _serving["model"]
     label_encoder = _serving["label_encoder"]
     model_class_ids = _serving.get("model_class_ids")
@@ -278,6 +288,7 @@ def predict_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                 {class_names[j]: float(row[j]) for j in range(len(class_names))}
                 for row in proba
             ]
+    log.debug("predict top labels=%s", out.get("predicted_type", [])[:3])
     return out
 
 
@@ -292,16 +303,40 @@ def predict_next_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             ),
         )
     try:
+        log.info("POST /predict/next-attack records=%s", len(records))
         return predict_next_attack(records, bundle)
     except ValueError as exc:
+        log.warning("next-attack validation error: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "on")
+
+
+def _http_request_log_enabled() -> bool:
+    return _env_flag("MODEL_API_HTTP_LOG", True)
+
+
+def _skip_health_paths() -> bool:
+    return _env_flag("MODEL_API_LOG_SKIP_HEALTH", True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    log.info("Startup: loading tabular and MRI bundles (text_dir=%s)", _TEXT_DIR)
     load_serving_bundle()
     load_mri_bundle()
+    log.info(
+        "Startup complete: xgb_ok=%s mri_ok=%s",
+        "model" in _serving,
+        "model" in _mri,
+    )
     yield
+    log.info("Shutdown.")
 
 
 app = FastAPI(title="Migraine & MRI model API", lifespan=lifespan)
@@ -315,6 +350,25 @@ if _cors_origins:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    if not _http_request_log_enabled():
+        return await call_next(request)
+    path = request.url.path
+    if _skip_health_paths() and path in ("/health", "/api/health"):
+        return await call_next(request)
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+        ms = (time.perf_counter() - start) * 1000
+        log.info("%s %s -> %s %.1fms", request.method, path, response.status_code, ms)
+        return response
+    except Exception:
+        ms = (time.perf_counter() - start) * 1000
+        log.exception("%s %s failed after %.1fms", request.method, path, ms)
+        raise
 
 
 class PredictRequest(BaseModel):
@@ -380,6 +434,7 @@ def predict(req: PredictRequest):
 
 @app.post("/predict/reload")
 def predict_reload():
+    log.info("POST /predict/reload")
     load_serving_bundle()
     load_mri_bundle()
     return health()
@@ -392,6 +447,8 @@ async def predict_mri(file: UploadFile = File(..., description="Brain MRI slice 
     if not raw:
         raise HTTPException(status_code=400, detail="Empty upload.")
 
+    log.info("POST /predict/mri filename=%s bytes=%s", file.filename, len(raw))
+
     def _run():
         return predict_mri_from_bytes(raw)
 
@@ -400,6 +457,7 @@ async def predict_mri(file: UploadFile = File(..., description="Brain MRI slice 
 
 @app.post("/predict/mri/reload")
 def predict_mri_reload():
+    log.info("POST /predict/mri/reload")
     load_mri_bundle()
     return {
         "has_mri_model": "model" in _mri,
@@ -422,6 +480,12 @@ async def pipeline_run(
     data_path = _resolve_under_text(data_path)
     data_dir = _resolve_under_text(data_dir)
     stratify = stratify_by_patient
+    log.info(
+        "POST /pipeline/run data_path=%s data_dir=%s stratify_by_patient=%s",
+        data_path,
+        data_dir,
+        stratify,
+    )
 
     def _run():
         old = os.getcwd()
@@ -440,6 +504,7 @@ async def pipeline_run(
 
     await run_in_threadpool(_run)
     load_serving_bundle()
+    log.info("POST /pipeline/run finished")
     return {"status": "completed", "health": health()}
 
 
@@ -458,6 +523,7 @@ async def pipeline_run_next(
         raise HTTPException(status_code=403, detail="Pipeline routes are disabled in this environment.")
     data_path = _resolve_under_text(data_path)
     data_dir = _resolve_under_text(data_dir)
+    log.info("/pipeline/run-next data_path=%s data_dir=%s", data_path, data_dir)
 
     def _run():
         old = os.getcwd()
@@ -474,6 +540,7 @@ async def pipeline_run_next(
 
     result = await run_in_threadpool(_run)
     load_serving_bundle()
+    log.info("/pipeline/run-next finished metrics_keys=%s", list((result or {}).get("metrics", {}).keys()))
     return {"status": "completed", "next_attack_training": result, "health": health()}
 
 
@@ -495,6 +562,8 @@ async def pipeline_run_mri(data_dir: str | None = None):
     if not _pipeline_routes_enabled():
         raise HTTPException(status_code=403, detail="Pipeline routes are disabled in this environment.")
 
+    log.info("POST /pipeline/run-mri data_dir=%s", data_dir)
+
     def _run():
         ip = _IMAGE_DIR / "run_pipeline.py"
         spec = importlib.util.spec_from_file_location("mri_image_run_pipeline", str(ip))
@@ -515,6 +584,7 @@ async def pipeline_run_mri(data_dir: str | None = None):
 
     await run_in_threadpool(_run)
     load_mri_bundle()
+    log.info("POST /pipeline/run-mri finished")
     return {"status": "completed", "health": health()}
 
 
@@ -523,4 +593,17 @@ if __name__ == "__main__":
 
     host = os.getenv("MODEL_SERVER_HOST", "0.0.0.0")
     port = int(os.getenv("MODEL_SERVER_PORT", "8000"))
-    uvicorn.run(app, host=host, port=port)
+    uv_level = _LOG_LEVEL.lower()
+    if uv_level not in ("critical", "error", "warning", "info", "debug"):
+        uv_level = "info"
+    access = _env_flag("MODEL_API_ACCESS_LOG", False)
+    for _lg_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        logging.getLogger(_lg_name).setLevel(_root_level)
+    log.info("Starting uvicorn %s:%s uvicorn_log_level=%s access_log=%s", host, port, uv_level, access)
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_level=uv_level,
+        access_log=access,
+    )
