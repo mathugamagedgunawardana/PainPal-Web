@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PainPal - Healthcare Management",
+  title: "PainPal AI",
   description: "Healthcare management system for doctors and patients",
 };
 

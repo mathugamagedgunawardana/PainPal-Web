@@ -11,12 +11,16 @@ from pathlib import Path
 DEFAULT_CLASSES = ["migraine", "glioma", "meningioma", "pituitary", "no_tumor"]
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
 
-# Folder names that count as TUMOR (all others = non_tumor) for binary classification
+# Folder names that count as TUMOR (all others = non_tumor) for legacy binary classification
 TUMOR_FOLDER_NAMES = {
     "glioma", "glioma_1", "glioma_2", "glioma_3", "glioma_unknown",
     "meningioma", "pituitary",
 }
 BINARY_CLASS_NAMES = ["non_tumor", "tumor"]  # label 0 = non_tumor, 1 = tumor
+
+# MRI: migraine vs any other folder (other diseases / controls, e.g. glioma, no_tumor)
+MIGRAINE_FOLDER_NAMES = frozenset({"migraine"})
+BINARY_MIGRAINE_CLASS_NAMES = ["other", "migraine"]  # label 0 = other, 1 = migraine
 
 
 def get_class_folders(data_dir: str):
@@ -71,6 +75,21 @@ def list_binary_image_paths(data_dir: str, tumor_folder_names=None):
     pairs = []
     for folder_name, paths in by_class.items():
         label = 1 if folder_name in tumor_folder_names else 0
+        for p in paths:
+            pairs.append((p, label))
+    return pairs
+
+
+def list_migraine_vs_other_paths(data_dir: str, migraine_folder_names=None):
+    """
+    Return (path, label) for migraine (1) vs other brain MRI classes (0).
+    Any folder not in migraine_folder_names (default MIGRAINE_FOLDER_NAMES) is labeled 0.
+    """
+    positive = migraine_folder_names or MIGRAINE_FOLDER_NAMES
+    by_class = list_image_paths_by_class(data_dir)
+    pairs = []
+    for folder_name, paths in by_class.items():
+        label = 1 if folder_name in positive else 0
         for p in paths:
             pairs.append((p, label))
     return pairs

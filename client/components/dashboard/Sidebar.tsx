@@ -117,13 +117,13 @@ export default function Sidebar({ activeItem, userRole = 'doctor', userName = 'D
         <Link
           href={`/${userRole}/overview`}
           className="flex items-center min-w-0"
-          title={collapsed ? 'MigraineTrack' : undefined}
+          title={collapsed ? 'PainPal AI' : undefined}
         >
           <div className="w-8 h-8 shrink-0 bg-linear-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
             <Brain className="w-5 h-5 text-white" />
           </div>
           <span className={cn('ml-3 font-bold text-xl text-gray-800 truncate', collapsed ? 'hidden' : 'hidden lg:inline')}>
-            MigraineTrack
+            PainPal AI
           </span>
         </Link>
       </div>

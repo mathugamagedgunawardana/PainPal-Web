@@ -49,7 +49,12 @@ def load_model_for_inference(artifacts_dir=".", device=None):
     num_classes = len(class_names)
     model = models.resnet18(weights=None)
     model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    load_kw = {"map_location": device}
+    try:
+        state = torch.load(model_path, **load_kw, weights_only=True)
+    except TypeError:
+        state = torch.load(model_path, **load_kw)
+    model.load_state_dict(state)
     model = model.to(device)
     model.eval()
 

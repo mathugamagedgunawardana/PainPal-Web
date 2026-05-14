@@ -1,6 +1,8 @@
 """
-Load trained ResNet and predict: tumor vs non_tumor (binary).
+Load trained ResNet18 and predict migraine vs other (binary), or legacy tumor vs non_tumor.
 """
+from __future__ import annotations
+
 import os
 import sys
 import torch
@@ -22,22 +24,65 @@ def get_transform(transforms_config):
     ])
 
 
-def predict_image(image_path, model, transform, device, class_names, tumor_confidence_threshold=0.7):
+def _resolve_positive_class_and_threshold(class_names: list[str], transforms_config: dict) -> tuple[str | None, float]:
+    """Binary threshold gating: require P(positive_class) >= threshold to predict that class."""
+    cfg = transforms_config or {}
+    threshold = float(cfg.get("confidence_threshold", cfg.get("tumor_confidence_threshold", 0.7)))
+    positive = cfg.get("positive_class")
+    if positive and positive in class_names:
+        return positive, threshold
+    if "migraine" in class_names:
+        return "migraine", threshold
+    if "tumor" in class_names:
+        return "tumor", threshold
+    return None, threshold
+
+
+def _binary_negative_class(class_names: list[str], positive: str) -> str:
+    for c in class_names:
+        if c != positive:
+            return c
+    return class_names[0]
+
+
+def predict_from_pil(
+    pil_img: Image.Image,
+    model,
+    transform,
+    device,
+    class_names: list[str],
+    transforms_config: dict | None = None,
+):
     """
-    Predict tumor vs non_tumor. If P(tumor) < threshold, return non_tumor
-    so that other / out-of-distribution images are classified as non_tumor.
+    Return (predicted_label, probabilities list aligned with class_names).
+    For binary checkpoints with a configured positive_class, if P(positive) < threshold
+    the other class is returned (conservative for OOD / ambiguous slices).
     """
-    img = Image.open(image_path).convert("RGB")
-    x = transform(img).unsqueeze(0).to(device)
+    transforms_config = transforms_config or {}
+    x = transform(pil_img).unsqueeze(0).to(device)
     with torch.no_grad():
         logits = model(x)
         probs = torch.softmax(logits, dim=1)[0].cpu().tolist()
-    prob_dict = dict(zip(class_names, probs))
-    tumor_idx = class_names.index("tumor") if "tumor" in class_names else None
-    if tumor_idx is not None and prob_dict.get("tumor", 0.0) < tumor_confidence_threshold:
-        return "non_tumor", probs
+    positive, threshold = _resolve_positive_class_and_threshold(class_names, transforms_config)
+    if positive is not None and len(class_names) == 2:
+        p_pos = dict(zip(class_names, probs)).get(positive, 0.0)
+        if p_pos < threshold:
+            return _binary_negative_class(class_names, positive), probs
     pred_idx = max(range(len(class_names)), key=lambda i: probs[i])
     return class_names[pred_idx], probs
+
+
+def predict_image(
+    image_path: str,
+    model,
+    transform,
+    device,
+    class_names: list[str],
+    transforms_config: dict | None = None,
+):
+    """Predict from file path (RGB)."""
+    img = Image.open(image_path).convert("RGB")
+    return predict_from_pil(img, model, transform, device, class_names, transforms_config)
 
 
 def main():
@@ -55,16 +100,10 @@ def main():
         print("File not found:", image_path)
         return
 
-    threshold = transforms_config.get("tumor_confidence_threshold", 0.7)
     pred_label, probs = predict_image(
-        image_path, model, transform, device, class_names,
-        tumor_confidence_threshold=threshold,
+        image_path, model, transform, device, class_names, transforms_config
     )
     print("Predicted:", pred_label)
-    if pred_label == "non_tumor":
-        print("  -> Classified as non_tumor (no tumor / other image).")
-    else:
-        print("  -> Classified as tumor.")
     print("Probabilities:", dict(zip(class_names, [round(p, 4) for p in probs])))
 
 
