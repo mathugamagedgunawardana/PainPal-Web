@@ -3,7 +3,10 @@ import { LinkStatus } from '@prisma/client'
 import { requireRole } from '@/lib/auth/middleware'
 import { getPatientUserId } from '@/lib/auth/getPatientUserId'
 import { prisma } from '@/lib/prisma'
-import { refreshDoctorPatientSummary } from '@/lib/ai/refreshDoctorPatientSummary'
+import {
+  refreshDoctorPatientSummary,
+  type SerializedDoctorPatientSummary,
+} from '@/lib/ai/refreshDoctorPatientSummary'
 
 function serializeFromDb(row: {
   id: string
