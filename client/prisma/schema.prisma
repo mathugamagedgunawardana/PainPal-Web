@@ -1,5 +1,8 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
+//
+// ER diagrams (crow's foot + Chen-style overview): client/docs/PRISMA_ER_DIAGRAM.md
+//   and client/docs/PRISMA_ER_CHEN_OVERVIEW.drawio (open in https://app.diagrams.net)
 
 // 1. Define the datasource (MongoDB)
 datasource db {
