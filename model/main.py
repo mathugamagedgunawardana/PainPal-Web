@@ -1,13 +1,25 @@
 """
-FastAPI server: train via run_pipeline (text) and serve XGBoost migraine-type predictions.
-Artifacts are read from model/text/ (same layout as run_pipeline Step 9).
+FastAPI server: train via run_pipeline (text), serve XGBoost migraine-type predictions,
+and optional ResNet18 MRI inference (migraine vs other) from model/image/.
+Artifacts for tabular models live under model/text/; MRI weights under model/image/.
+
+Runtime logging (stderr):
+  MODEL_API_LOG_LEVEL=INFO|DEBUG|WARNING (default INFO)
+  MODEL_API_LOG_FORMAT= optional custom logging format string
+  MODEL_API_HTTP_LOG=true|false — log each HTTP request with status and latency (default true)
+  MODEL_API_ACCESS_LOG=true|false — uvicorn access log when using python main.py (default false)
+  MODEL_API_LOG_SKIP_HEALTH=true|false — skip /health and /api/health lines (default true)
 """
 
 from __future__ import annotations
 
+import importlib.util
+import logging
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +30,21 @@ import pandas as pd
 
 _env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(_env_path)
-from fastapi import FastAPI, HTTPException
+
+_LOG_LEVEL = os.getenv("MODEL_API_LOG_LEVEL", "INFO").strip().upper()
+_root_level = getattr(logging, _LOG_LEVEL, logging.INFO)
+logging.basicConfig(
+    level=_root_level,
+    format=os.getenv(
+        "MODEL_API_LOG_FORMAT",
+        "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    ),
+    datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,
+)
+log = logging.getLogger("migraine_model_api")
+
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -31,7 +57,13 @@ if str(_TEXT_DIR) not in sys.path:
 from run_pipeline import run_pipeline  # noqa: E402
 from train_next_attack import run_next_attack_pipeline, predict_next_attack  # noqa: E402
 
+_IMAGE_DIR = Path(__file__).resolve().parent / "image"
+# Append (not insert) so `run_pipeline` resolves to model/text/, not model/image/run_pipeline.py
+if str(_IMAGE_DIR) not in sys.path:
+    sys.path.append(str(_IMAGE_DIR))
+
 _serving: dict[str, Any] = {}
+_mri: dict[str, Any] = {}
 
 
 def _parse_cors_origins() -> list[str]:
@@ -68,6 +100,7 @@ def load_serving_bundle() -> None:
         _serving["error"] = (
             f"Missing model files under {_TEXT_DIR}. Run POST /pipeline/run or train locally first."
         )
+        log.warning("Serving bundle not loaded: missing %s or %s", model_p, enc_p)
         return
 
     _serving["model"] = joblib.load(model_p)
@@ -98,6 +131,87 @@ def load_serving_bundle() -> None:
         else None
     )
     _serving.pop("error", None)
+    log.info(
+        "Loaded XGBoost bundle from %s; next_attack=%s",
+        model_p,
+        _serving["next_attack_bundle"] is not None,
+    )
+
+
+def load_mri_bundle() -> None:
+    """Load ResNet18 checkpoint from model/image/ (migraine vs other). Safe if files missing."""
+    try:
+        import torch
+        from predict_model import get_transform, predict_from_pil
+        from save_model import load_model_for_inference
+    except ImportError as exc:
+        _mri.clear()
+        _mri["error"] = f"MRI stack unavailable ({exc}). Install torch, torchvision, Pillow."
+        log.warning("MRI stack unavailable: %s", exc)
+        return
+
+    base = str(_IMAGE_DIR.resolve())
+    model_pt = _IMAGE_DIR / "resnet_brain_model.pt"
+    labels_json = _IMAGE_DIR / "artifacts" / "class_names.json"
+    if not model_pt.is_file() or not labels_json.is_file():
+        _mri.clear()
+        _mri["error"] = (
+            f"Missing MRI weights. Expected {model_pt} and {labels_json}. "
+            "Train under model/image with run_pipeline.py (folder layout: migraine/, glioma/, ...)."
+        )
+        log.warning("MRI model not loaded: missing weights or labels under %s", _IMAGE_DIR)
+        return
+
+    try:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model, class_names, transforms_config = load_model_for_inference(base, device)
+        transform = get_transform(transforms_config)
+    except Exception as exc:
+        _mri.clear()
+        _mri["error"] = f"Failed to load MRI model: {exc}"
+        log.exception("Failed to load MRI model")
+        return
+
+    _mri["model"] = model
+    _mri["transform"] = transform
+    _mri["device"] = device
+    _mri["class_names"] = class_names
+    _mri["transforms_config"] = transforms_config
+    _mri["predict_from_pil"] = predict_from_pil
+    _mri.pop("error", None)
+    log.info("Loaded MRI ResNet bundle on device %s", device)
+
+
+def predict_mri_from_bytes(image_bytes: bytes) -> dict[str, Any]:
+    """Run ResNet inference on raw image bytes (PNG/JPEG, ...)."""
+    if "model" not in _mri:
+        raise HTTPException(status_code=503, detail=_mri.get("error", "MRI model not loaded."))
+    from PIL import Image
+
+    predict_from_pil = _mri["predict_from_pil"]
+    try:
+        img = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid image file: {exc}") from exc
+
+    pred_label, probs = predict_from_pil(
+        img,
+        _mri["model"],
+        _mri["transform"],
+        _mri["device"],
+        _mri["class_names"],
+        _mri["transforms_config"],
+    )
+    names = _mri["class_names"]
+    conf = max(probs) if probs else None
+    log.debug("MRI inference label=%s confidence=%s", pred_label, conf)
+    return {
+        "predicted_label": pred_label,
+        "confidence": float(conf) if conf is not None else None,
+        "probabilities": {str(names[i]): float(probs[i]) for i in range(len(names))},
+        "class_names": [str(x) for x in names],
+        "disclaimer": "Research and education only; not for clinical diagnosis.",
+    }
 
 
 def preprocess_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -139,6 +253,8 @@ def predict_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     if "model" not in _serving:
         raise HTTPException(status_code=503, detail=_serving.get("error", "Model not loaded."))
 
+    log.info("POST /predict rows=%s", len(records))
+
     model = _serving["model"]
     label_encoder = _serving["label_encoder"]
     model_class_ids = _serving.get("model_class_ids")
@@ -172,6 +288,7 @@ def predict_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                 {class_names[j]: float(row[j]) for j in range(len(class_names))}
                 for row in proba
             ]
+    log.debug("predict top labels=%s", out.get("predicted_type", [])[:3])
     return out
 
 
@@ -186,18 +303,43 @@ def predict_next_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             ),
         )
     try:
+        log.info("POST /predict/next-attack records=%s", len(records))
         return predict_next_attack(records, bundle)
     except ValueError as exc:
+        log.warning("next-attack validation error: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "on")
+
+
+def _http_request_log_enabled() -> bool:
+    return _env_flag("MODEL_API_HTTP_LOG", True)
+
+
+def _skip_health_paths() -> bool:
+    return _env_flag("MODEL_API_LOG_SKIP_HEALTH", True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    log.info("Startup: loading tabular and MRI bundles (text_dir=%s)", _TEXT_DIR)
     load_serving_bundle()
+    load_mri_bundle()
+    log.info(
+        "Startup complete: xgb_ok=%s mri_ok=%s",
+        "model" in _serving,
+        "model" in _mri,
+    )
     yield
+    log.info("Shutdown.")
 
 
-app = FastAPI(title="Migraine model API", lifespan=lifespan)
+app = FastAPI(title="Migraine & MRI model API", lifespan=lifespan)
 
 _cors_origins = _parse_cors_origins()
 if _cors_origins:
@@ -208,6 +350,25 @@ if _cors_origins:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    if not _http_request_log_enabled():
+        return await call_next(request)
+    path = request.url.path
+    if _skip_health_paths() and path in ("/health", "/api/health"):
+        return await call_next(request)
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+        ms = (time.perf_counter() - start) * 1000
+        log.info("%s %s -> %s %.1fms", request.method, path, response.status_code, ms)
+        return response
+    except Exception:
+        ms = (time.perf_counter() - start) * 1000
+        log.exception("%s %s failed after %.1fms", request.method, path, ms)
+        raise
 
 
 class PredictRequest(BaseModel):
@@ -227,7 +388,12 @@ def _resolve_under_text(p: str | None) -> str | None:
 
 @app.get("/")
 def root():
-    return {"service": "migraine-model-api", "docs": "/docs", "health": "/health"}
+    return {
+        "service": "migraine-model-api",
+        "docs": "/docs",
+        "health": "/health",
+        "predict_mri": "/predict/mri",
+    }
 
 
 @app.get("/health")
@@ -239,6 +405,8 @@ def health():
         "has_model_class_ids": _artifact_path("model_class_ids.joblib").is_file(),
         "has_next_attack_bundle": _artifact_path("next_attack_bundle.joblib").is_file(),
         "error": _serving.get("error"),
+        "has_mri_model": "model" in _mri,
+        "mri_error": _mri.get("error"),
     }
 
 
@@ -266,8 +434,35 @@ def predict(req: PredictRequest):
 
 @app.post("/predict/reload")
 def predict_reload():
+    log.info("POST /predict/reload")
     load_serving_bundle()
+    load_mri_bundle()
     return health()
+
+
+@app.post("/predict/mri")
+async def predict_mri(file: UploadFile = File(..., description="Brain MRI slice (PNG, JPEG, etc.).")):
+    """ResNet18: migraine vs other brain MRI classes (requires trained weights under model/image/)."""
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty upload.")
+
+    log.info("POST /predict/mri filename=%s bytes=%s", file.filename, len(raw))
+
+    def _run():
+        return predict_mri_from_bytes(raw)
+
+    return await run_in_threadpool(_run)
+
+
+@app.post("/predict/mri/reload")
+def predict_mri_reload():
+    log.info("POST /predict/mri/reload")
+    load_mri_bundle()
+    return {
+        "has_mri_model": "model" in _mri,
+        "mri_error": _mri.get("error"),
+    }
 
 
 @app.post("/pipeline/run")
@@ -285,6 +480,12 @@ async def pipeline_run(
     data_path = _resolve_under_text(data_path)
     data_dir = _resolve_under_text(data_dir)
     stratify = stratify_by_patient
+    log.info(
+        "POST /pipeline/run data_path=%s data_dir=%s stratify_by_patient=%s",
+        data_path,
+        data_dir,
+        stratify,
+    )
 
     def _run():
         old = os.getcwd()
@@ -303,6 +504,7 @@ async def pipeline_run(
 
     await run_in_threadpool(_run)
     load_serving_bundle()
+    log.info("POST /pipeline/run finished")
     return {"status": "completed", "health": health()}
 
 
@@ -321,6 +523,7 @@ async def pipeline_run_next(
         raise HTTPException(status_code=403, detail="Pipeline routes are disabled in this environment.")
     data_path = _resolve_under_text(data_path)
     data_dir = _resolve_under_text(data_dir)
+    log.info("/pipeline/run-next data_path=%s data_dir=%s", data_path, data_dir)
 
     def _run():
         old = os.getcwd()
@@ -337,7 +540,52 @@ async def pipeline_run_next(
 
     result = await run_in_threadpool(_run)
     load_serving_bundle()
+    log.info("/pipeline/run-next finished metrics_keys=%s", list((result or {}).get("metrics", {}).keys()))
     return {"status": "completed", "next_attack_training": result, "health": health()}
+
+
+def _resolve_under_image(p: str | None) -> str | None:
+    if p is None:
+        return None
+    path = Path(p)
+    if not path.is_absolute():
+        path = (_IMAGE_DIR / path).resolve()
+    return str(path)
+
+
+@app.post("/pipeline/run-mri")
+async def pipeline_run_mri(data_dir: str | None = None):
+    """
+    Train the MRI ResNet18 pipeline (migraine vs other) under model/image.
+    `data_dir` is resolved relative to model/image when not absolute (default: image/Data).
+    """
+    if not _pipeline_routes_enabled():
+        raise HTTPException(status_code=403, detail="Pipeline routes are disabled in this environment.")
+
+    log.info("POST /pipeline/run-mri data_dir=%s", data_dir)
+
+    def _run():
+        ip = _IMAGE_DIR / "run_pipeline.py"
+        spec = importlib.util.spec_from_file_location("mri_image_run_pipeline", str(ip))
+        if spec is None or spec.loader is None:
+            raise RuntimeError("Could not load MRI training module.")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        old = os.getcwd()
+        try:
+            os.chdir(str(_IMAGE_DIR))
+            resolved = _resolve_under_image(data_dir)
+            if resolved is not None:
+                mod.run_pipeline(data_dir=resolved)
+            else:
+                mod.run_pipeline()
+        finally:
+            os.chdir(old)
+
+    await run_in_threadpool(_run)
+    load_mri_bundle()
+    log.info("POST /pipeline/run-mri finished")
+    return {"status": "completed", "health": health()}
 
 
 if __name__ == "__main__":
@@ -345,4 +593,17 @@ if __name__ == "__main__":
 
     host = os.getenv("MODEL_SERVER_HOST", "0.0.0.0")
     port = int(os.getenv("MODEL_SERVER_PORT", "8000"))
-    uvicorn.run(app, host=host, port=port)
+    uv_level = _LOG_LEVEL.lower()
+    if uv_level not in ("critical", "error", "warning", "info", "debug"):
+        uv_level = "info"
+    access = _env_flag("MODEL_API_ACCESS_LOG", False)
+    for _lg_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        logging.getLogger(_lg_name).setLevel(_root_level)
+    log.info("Starting uvicorn %s:%s uvicorn_log_level=%s access_log=%s", host, port, uv_level, access)
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_level=uv_level,
+        access_log=access,
+    )

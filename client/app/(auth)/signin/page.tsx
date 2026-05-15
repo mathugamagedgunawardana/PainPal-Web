@@ -47,7 +47,7 @@ export default function SignInPage() {
               <Brain className="w-6 h-6 text-white" />
             </div>
             <span className="text-xl font-bold bg-linear-to-r from-slate-800 via-violet-700 to-teal-600 bg-clip-text text-transparent">
-              MigraineAI
+              PainPal AI
             </span>
           </Link>
           <div className="flex items-center gap-4 sm:gap-6 text-sm font-medium">
@@ -184,7 +184,7 @@ export default function SignInPage() {
           <div className="mt-10 text-center space-y-4">
             <div className="h-1 w-24 mx-auto rounded-full bg-linear-to-r from-violet-500 via-indigo-500 to-teal-400 opacity-80" />
             <p className="text-xs text-slate-500">
-              © {new Date().getFullYear()} MigraineAI. All rights reserved.
+              © {new Date().getFullYear()} PainPal AI. All rights reserved.
             </p>
           </div>
         </div>

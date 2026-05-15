@@ -26,7 +26,7 @@ export default function Home() {
               <Brain className="w-6 h-6 text-white" />
             </div>
             <span className="text-xl sm:text-2xl font-bold bg-linear-to-r from-slate-800 via-violet-700 to-teal-600 bg-clip-text text-transparent">
-              MigraineAI
+              PainPal AI
             </span>
           </Link>
           <div className="hidden md:flex items-center gap-7 lg:gap-9">
@@ -528,7 +528,7 @@ export default function Home() {
                   <Brain className="w-7 h-7 text-white" />
                 </div>
                 <span className="text-3xl font-bold bg-linear-to-r from-white to-teal-100 bg-clip-text text-transparent">
-                  MigraineAI
+                  PainPal AI
                 </span>
               </div>
               <p className="text-slate-400 max-w-md leading-relaxed mb-6">
@@ -619,7 +619,7 @@ export default function Home() {
             </div>
           </div>
           <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-slate-500 text-sm">© 2025 MigraineAI. All rights reserved.</p>
+            <p className="text-slate-500 text-sm">© 2025 PainPal AI. All rights reserved.</p>
             <p className="text-slate-500 text-sm">
               Made with <span className="text-rose-400">♥</span> for better health
             </p>

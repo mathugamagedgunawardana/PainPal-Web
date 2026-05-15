@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { signToken, setAuthCookie } from '@/lib/auth/jwt';
 import { comparePassword } from '@/lib/auth/password';
 import { doctorProfileToMobile, patientProfileToMobile } from '@/lib/auth/mobileAuthResponse';
@@ -69,29 +70,43 @@ export async function POST(request: NextRequest) {
 
       const prisma = await getPrismaSafe();
       if (prisma && hardcoded.role === 'DOCTOR') {
-        void triggerSeedPredictionSync(prisma);
-        const seedDoctor = await prisma.user.findUnique({
-          where: { email: 'dr.johnson@clinic.example.com' },
-          include: { doctorProfile: true },
-        });
-        if (seedDoctor?.doctorProfile) {
-          userId = seedDoctor.id;
-          name = seedDoctor.doctorProfile.name;
-          useEmail = seedDoctor.email;
-          doctorProfileJson = doctorProfileToMobile(seedDoctor.doctorProfile);
+        try {
+          void triggerSeedPredictionSync(prisma);
+          const seedDoctor = await prisma.user.findUnique({
+            where: { email: 'dr.johnson@clinic.example.com' },
+            include: { doctorProfile: true },
+          });
+          if (seedDoctor?.doctorProfile) {
+            userId = seedDoctor.id;
+            name = seedDoctor.doctorProfile.name;
+            useEmail = seedDoctor.email;
+            doctorProfileJson = doctorProfileToMobile(seedDoctor.doctorProfile);
+          }
+        } catch (e) {
+          console.warn(
+            'Hardcoded doctor login: could not reach database (enrichment skipped). Check DATABASE_URL / DNS.',
+            e
+          );
         }
       } else if (prisma && hardcoded.role === 'PATIENT') {
-        void triggerSeedPredictionSync(prisma);
-        const seedPatientUser = await prisma.user.findFirst({
-          where: { role: 'PATIENT' },
-          include: { patientProfile: true },
-          orderBy: { createdAt: 'asc' },
-        });
-        if (seedPatientUser?.patientProfile) {
-          userId = seedPatientUser.id;
-          name = seedPatientUser.patientProfile.name;
-          useEmail = seedPatientUser.email;
-          patientProfileJson = patientProfileToMobile(seedPatientUser.patientProfile);
+        try {
+          void triggerSeedPredictionSync(prisma);
+          const seedPatientUser = await prisma.user.findFirst({
+            where: { role: 'PATIENT' },
+            include: { patientProfile: true },
+            orderBy: { createdAt: 'asc' },
+          });
+          if (seedPatientUser?.patientProfile) {
+            userId = seedPatientUser.id;
+            name = seedPatientUser.patientProfile.name;
+            useEmail = seedPatientUser.email;
+            patientProfileJson = patientProfileToMobile(seedPatientUser.patientProfile);
+          }
+        } catch (e) {
+          console.warn(
+            'Hardcoded patient login: could not reach database (enrichment skipped). Check DATABASE_URL / DNS.',
+            e
+          );
         }
       }
 
@@ -121,15 +136,30 @@ export async function POST(request: NextRequest) {
 
     // 2. Try database users (e.g. seed doctor: dr.johnson@clinic.example.com / SeedPassword123!)
     const prisma = await getPrismaSafe();
-    const dbUser = prisma
-      ? await prisma.user.findUnique({
+    let dbUser: Prisma.UserGetPayload<{
+      include: { doctorProfile: true; patientProfile: true };
+    }> | null = null;
+    if (prisma) {
+      try {
+        dbUser = await prisma.user.findUnique({
           where: { email },
           include: {
             doctorProfile: true,
             patientProfile: true,
           },
-        })
-      : null;
+        });
+      } catch (e) {
+        console.error('Login: database lookup failed (check DATABASE_URL and network):', e);
+        return NextResponse.json(
+          {
+            error: 'Database unavailable',
+            message:
+              'Cannot connect to the database. Verify DATABASE_URL in .env (Atlas cluster host, VPN, DNS).',
+          },
+          { status: 503 }
+        );
+      }
+    }
     if (dbUser && await comparePassword(password, dbUser.passwordHash)) {
       if (prisma) {
         void triggerSeedPredictionSync(prisma);

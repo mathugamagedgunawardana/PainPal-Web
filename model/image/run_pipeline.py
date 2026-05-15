@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Brain image classification pipeline (Steps 1–9).
-Binary classification: tumor vs non_tumor (ResNet18).
-Folder names in data_loader.TUMOR_FOLDER_NAMES -> tumor; all others -> non_tumor.
+Binary MRI classification: migraine vs other (ResNet18).
+Folders named `migraine` -> migraine; glioma, meningioma, pituitary, no_tumor, etc. -> other.
 """
 import os
 import sys
@@ -17,15 +17,15 @@ from sklearn.utils.class_weight import compute_class_weight
 from data_loader import (
     get_class_folders,
     count_images,
-    list_binary_image_paths,
-    TUMOR_FOLDER_NAMES,
-    BINARY_CLASS_NAMES,
+    list_migraine_vs_other_paths,
+    MIGRAINE_FOLDER_NAMES,
+    BINARY_MIGRAINE_CLASS_NAMES,
 )
 from save_model import save_artifacts
 
 
 class BinaryImageDataset(Dataset):
-    """Dataset of (image_path, binary_label) for tumor (1) vs non_tumor (0)."""
+    """Dataset of (image_path, binary_label) pairs (e.g. migraine=1 vs other=0)."""
 
     def __init__(self, pairs, transform=None):
         self.pairs = pairs  # list of (path, 0|1)
@@ -57,8 +57,8 @@ USE_GPU = True
 USE_AMP = True
 # DataLoader workers when using GPU (0 = main process only; 4 typical for GPU)
 NUM_WORKERS = 4
-# At inference: only predict "tumor" if P(tumor) >= this threshold; else "non_tumor" (for OOD / other images)
-TUMOR_CONFIDENCE_THRESHOLD = 0.7
+# At inference: only predict positive class (migraine) if P >= threshold; else "other"
+CONFIDENCE_THRESHOLD = 0.7
 
 
 def _get_device():
@@ -82,22 +82,22 @@ def _print_gpu_status(device):
 
 
 def step1_load_data(data_dir: str):
-    """Step 1: Discover dataset and build binary (tumor / non_tumor) image list."""
+    """Step 1: Discover dataset and build binary (migraine vs other) image list."""
     print("\n" + "=" * 60)
-    print("Step 1: Load data (binary: tumor vs non_tumor)")
+    print("Step 1: Load data (binary: migraine vs other)")
     print("=" * 60)
     data_dir = os.path.abspath(data_dir)
     if not os.path.isdir(data_dir):
         raise FileNotFoundError(f"Data directory not found: {data_dir}")
     classes = get_class_folders(data_dir)
-    total, counts = count_images(data_dir)
-    pairs = list_binary_image_paths(data_dir)
-    n_tumor = sum(1 for _, l in pairs if l == 1)
-    n_non_tumor = len(pairs) - n_tumor
+    total, _counts = count_images(data_dir)
+    pairs = list_migraine_vs_other_paths(data_dir)
+    n_migraine = sum(1 for _, l in pairs if l == 1)
+    n_other = len(pairs) - n_migraine
     print(f"  Data dir: {data_dir}")
-    print(f"  Folders (tumor): {[c for c in classes if c in TUMOR_FOLDER_NAMES]}")
-    print(f"  Folders (non_tumor): {[c for c in classes if c not in TUMOR_FOLDER_NAMES]}")
-    print(f"  Total images: {total}  (tumor={n_tumor}, non_tumor={n_non_tumor})")
+    print(f"  Folders (migraine): {[c for c in classes if c in MIGRAINE_FOLDER_NAMES]}")
+    print(f"  Folders (other): {[c for c in classes if c not in MIGRAINE_FOLDER_NAMES]}")
+    print(f"  Total images: {total}  (migraine={n_migraine}, other={n_other})")
     return data_dir, pairs, total
 
 
@@ -239,7 +239,7 @@ def run_pipeline(data_dir=None):
     _print_gpu_status(device)
     print(f"  Device: {device}  (num_workers={num_workers}, pin_memory={pin_memory})")
 
-    # Step 1: load paths and binary labels (tumor=1, non_tumor=0)
+    # Step 1: load paths and binary labels (migraine=1, other=0)
     data_dir, pairs, total = step1_load_data(data_dir)
     if total == 0:
         raise ValueError("No images found. Use folder layout: Data/migraine/*.png, Data/glioma/*.png, ...")
@@ -248,7 +248,7 @@ def run_pipeline(data_dir=None):
     train_tf, eval_tf = step2_prepare_transforms()
     full_dataset = BinaryImageDataset(pairs, transform=eval_tf)
     full_dataset_train_tf = BinaryImageDataset(pairs, transform=train_tf)
-    class_names = BINARY_CLASS_NAMES  # ["non_tumor", "tumor"]
+    class_names = BINARY_MIGRAINE_CLASS_NAMES  # ["other", "migraine"]
     num_classes = 2
 
     # Step 5: split
@@ -279,12 +279,15 @@ def run_pipeline(data_dir=None):
     # Step 7–8
     step7_8_evaluate(model, test_loader, class_names, device)
 
-    # Step 9 (save threshold so inference treats low-confidence / other images as non_tumor)
+    # Step 9 (threshold: low P(migraine) -> "other" for ambiguous / OOD slices)
     transforms_config = {
         "image_size": IMAGE_SIZE,
         "mean": [0.485, 0.456, 0.406],
         "std": [0.229, 0.224, 0.225],
-        "tumor_confidence_threshold": TUMOR_CONFIDENCE_THRESHOLD,
+        "positive_class": "migraine",
+        "confidence_threshold": CONFIDENCE_THRESHOLD,
+        # Backward compatibility for older checkpoints / clients
+        "tumor_confidence_threshold": CONFIDENCE_THRESHOLD,
     }
     step9_save(model, class_names, transforms_config=transforms_config)
 

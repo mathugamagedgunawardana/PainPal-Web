@@ -94,7 +94,7 @@ export default function SignUpPage() {
               <Brain className="w-7 h-7 text-white" />
             </div>
             <span className="text-3xl font-bold bg-gradient-to-r from-[#b3c6fc] to-[#7ad7d7] bg-clip-text text-transparent">
-              MigraineAI
+              PainPal AI
             </span>
           </Link>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Create Account</h1>
@@ -348,7 +348,7 @@ export default function SignUpPage() {
 
         {/* Footer */}
         <div className="text-center mt-8 text-sm text-gray-500">
-          <p>© 2024 MigraineAI. All rights reserved.</p>
+          <p>© 2024 PainPal AI. All rights reserved.</p>
         </div>
       </div>
     </div>
