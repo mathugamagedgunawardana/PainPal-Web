@@ -1,0 +1,4 @@
+# Environment — never commit secrets (templates stay via !.env.example)
+.env
+.env.*
+!.env.example
