@@ -43,6 +43,7 @@ import { ChatPanel } from '@/components/chat/ChatPanel'
 import { FloatingChatIcon } from '@/components/chat/FloatingChatIcon'
 import PatientAnalyticsPredictionPage from '@/components/doctor/PatientAnalyticsPredictionPage'
 import { DoctorPatientAiSummaryCard } from '@/components/doctor/DoctorPatientAiSummaryCard'
+import { DoctorPatientMriPredictionCard } from '@/components/doctor/DoctorPatientMriPredictionCard'
 import { cn } from '@/lib/utils'
 
 const DOCTOR_PATIENTS_LIST_COLLAPSED_KEY = 'doctor-patients-list-collapsed'
@@ -523,6 +524,10 @@ export default function PatientsPage() {
                 aria-label="Migraine prediction analytics"
               >
                 <PatientAnalyticsPredictionPage embedded patientId={selectedPatient.id} patientName={selectedPatient.name} />
+              </section>
+
+              <section className="scroll-mt-6" aria-label="MRI ResNet18 prediction">
+                <DoctorPatientMriPredictionCard patientId={selectedPatient.id} />
               </section>
 
               <section className="scroll-mt-6" aria-label="AI clinical summary">

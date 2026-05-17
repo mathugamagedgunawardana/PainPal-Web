@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/middleware'
-import { prisma } from '@/lib/prisma'
 import { getPatientProfileForUser } from '@/lib/patient/getPatientProfileForUser'
-
-const DEMO_PREDICTION =
-  'Demo: no acute intracranial abnormality detected. Consult a radiologist for clinical reads.'
-const DEMO_CONFIDENCE = 0.82
-const MODEL_LABEL = 'demo-stub-v1'
+import { persistMriScanWithModel } from '@/lib/mri/persistMriScan'
+import { callMriPredictApi, MriPredictApiError } from '@/lib/model/callMriPredictApi'
 
 /**
- * POST /api/mri/predict — multipart MRI upload (Flutter). Persists metadata to MongoDB for PATIENT users.
+ * POST /api/mri/predict — multipart MRI upload (Flutter).
+ * Uploads to Vercel Blob (private), runs ResNet18 via MODEL_API_URL, persists scan for patients.
  */
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ['PATIENT', 'ADMIN'])
@@ -30,35 +27,51 @@ export async function POST(req: NextRequest) {
   const originalFileName = file instanceof File ? file.name : 'upload'
   const mimeType = file.type || undefined
   const buf = Buffer.from(await file.arrayBuffer())
-  const fileSizeBytes = buf.length
 
-  const prediction = DEMO_PREDICTION
-  const confidence = DEMO_CONFIDENCE
-
-  if (auth.user!.role === 'PATIENT') {
-    const patient = await getPatientProfileForUser(auth.user!)
-    if (patient) {
-      try {
-        await prisma.patientMriScan.create({
-          data: {
-            patientId: patient.id,
-            originalFileName,
-            mimeType,
-            fileSizeBytes,
-            prediction,
-            confidence,
-            modelLabel: MODEL_LABEL,
-          },
-        })
-      } catch (e) {
-        console.error('POST /api/mri/predict persist error:', e)
-        return NextResponse.json({ error: 'Failed to save MRI record' }, { status: 500 })
-      }
+  try {
+    if (auth.user!.role === 'ADMIN') {
+      const modelResult = await callMriPredictApi(buf, originalFileName, mimeType)
+      return NextResponse.json({
+        prediction: modelResult.predicted_label,
+        predicted_label: modelResult.predicted_label,
+        confidence: modelResult.confidence,
+        probabilities: modelResult.probabilities,
+        class_names: modelResult.class_names,
+        disclaimer: modelResult.disclaimer,
+      })
     }
-  }
 
-  return NextResponse.json({
-    prediction,
-    confidence,
-  })
+    const patient = await getPatientProfileForUser(auth.user!)
+    if (!patient) {
+      return NextResponse.json({ error: 'Patient profile not found' }, { status: 404 })
+    }
+
+    const result = await persistMriScanWithModel({
+      patientId: patient.id,
+      imageBytes: buf,
+      originalFileName,
+      mimeType,
+      blobKeyPrefix: 'mri',
+    })
+
+    return NextResponse.json({
+      prediction: result.predicted_label,
+      predicted_label: result.predicted_label,
+      confidence: result.confidence,
+      probabilities: result.probabilities,
+      class_names: result.class_names,
+      disclaimer: result.disclaimer,
+      scanId: result.scanId,
+      blobUrl: result.blobUrl,
+    })
+  } catch (e) {
+    const status = e instanceof MriPredictApiError && e.status ? e.status : 503
+    const message =
+      e instanceof MriPredictApiError
+        ? e.message
+        : e instanceof Error
+          ? e.message
+          : 'MRI model prediction failed.'
+    return NextResponse.json({ error: message }, { status })
+  }
 }

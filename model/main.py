@@ -66,6 +66,24 @@ _serving: dict[str, Any] = {}
 _mri: dict[str, Any] = {}
 
 
+def _import_image_module(module_name: str):
+    """Load model/image/*.py without shadowing by model/text on sys.path."""
+    module_path = _IMAGE_DIR / f"{module_name}.py"
+    spec = importlib.util.spec_from_file_location(f"mri_image_{module_name}", str(module_path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load MRI module: {module_path}")
+    mod = importlib.util.module_from_spec(spec)
+    image_dir = str(_IMAGE_DIR)
+    saved_path = sys.path[:]
+    if image_dir not in sys.path[:1]:
+        sys.path.insert(0, image_dir)
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path[:] = saved_path
+    return mod
+
+
 def _parse_cors_origins() -> list[str]:
     raw = os.getenv("CORS_ORIGINS", "").strip()
     if not raw:
@@ -142,8 +160,20 @@ def load_mri_bundle() -> None:
     """Load ResNet18 checkpoint from model/image/ (migraine vs other). Safe if files missing."""
     try:
         import torch
-        from predict_model import get_transform, predict_from_pil
-        from save_model import load_model_for_inference
+
+        save_mod = _import_image_module("save_model")
+        text_save_mod = sys.modules.get("save_model")
+        sys.modules["save_model"] = save_mod
+        try:
+            predict_mod = _import_image_module("predict_model")
+        finally:
+            if text_save_mod is not None:
+                sys.modules["save_model"] = text_save_mod
+            elif "save_model" in sys.modules:
+                del sys.modules["save_model"]
+        get_transform = predict_mod.get_transform
+        predict_from_pil = predict_mod.predict_from_pil
+        load_model_for_inference = save_mod.load_model_for_inference
     except ImportError as exc:
         _mri.clear()
         _mri["error"] = f"MRI stack unavailable ({exc}). Install torch, torchvision, Pillow."

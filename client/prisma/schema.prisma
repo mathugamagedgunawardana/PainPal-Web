@@ -104,10 +104,15 @@ model PatientMriScan {
   originalFileName String
   mimeType         String?
   fileSizeBytes    Int?
+  /// Vercel Blob URL (private store; serve via authenticated API route).
+  blobUrl          String?
+  blobPathname     String?
 
   prediction       String
   confidence       Float
   modelLabel       String?
+  /// Per-class scores from ResNet18, e.g. { "other": 0.12, "migraine": 0.88 }
+  probabilities    Json?
 
   createdAt        DateTime       @default(now())
 }

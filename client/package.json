@@ -10,6 +10,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "seed": "prisma db seed",
+    "seed:mri-blob": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed-mri-blob.ts",
+    "env:pull": "vercel env pull .env.local",
     "export:seed-csv": "node prisma/export-seed-training-csv.mjs",
     "prepare": "node -e \"if(!process.env.CI){require('child_process').spawnSync('husky',{stdio:'inherit',shell:true})}\""
   },
@@ -21,6 +23,7 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@tailwindcss/forms": "^0.5.10",
     "@tailwindcss/typography": "^0.5.19",
+    "@vercel/blob": "^2.3.3",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -37,6 +40,7 @@
     "react-day-picker": "^9.11.1",
     "react-dom": "19.2.0",
     "recharts": "^2.15.4",
+    "sharp": "^0.34.5",
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
