@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "PainPal AI",
   description: "Healthcare management system for doctors and patients",
+  icons: {
+    icon: [{ url: "/logo.svg", type: "image/svg+xml" }],
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({
