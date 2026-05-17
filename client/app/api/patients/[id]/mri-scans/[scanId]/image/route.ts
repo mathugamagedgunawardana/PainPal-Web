@@ -36,7 +36,7 @@ export async function GET(
 
   try {
     const { buffer, contentType } = await readPrivateBlob(scan.blobPathname)
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type': contentType ?? scan.mimeType ?? 'image/png',
         'Cache-Control': 'private, max-age=3600',
