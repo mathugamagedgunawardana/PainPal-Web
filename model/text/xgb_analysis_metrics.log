@@ -1,0 +1,6 @@
+<frozen site>:101: RuntimeWarning: Unexpected value in sys.prefix, expected /home/ranith/Documents/projects/LLM/model/.venv_metrics, got /home/ranith/Documents/projects/LLM/model/text/../.venv_metrics
+<frozen site>:101: RuntimeWarning: Unexpected value in sys.exec_prefix, expected /home/ranith/Documents/projects/LLM/model/.venv_metrics, got /home/ranith/Documents/projects/LLM/model/text/../.venv_metrics
+Traceback (most recent call last):
+  File "/home/ranith/Documents/projects/LLM/model/text/run_xgb_analysis.py", line 14, in <module>
+    import matplotlib.pyplot as plt
+ModuleNotFoundError: No module named 'matplotlib'

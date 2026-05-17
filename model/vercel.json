@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/index.py": {
+      "excludeFiles": "{image/Data/**,image/.venv/**,venv/**,.venv_metrics/**,text/artifacts/**,**/__pycache__/**}"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index"
+    }
+  ]
+}

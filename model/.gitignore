@@ -2,6 +2,11 @@
 /node_modules
 /liveAgent/node_modules
 
+# Environment — never commit secrets (keep .env.example templates)
+.env
+.env.*
+!.env.example
+
 # Data folders (datasets, train outputs, etc.)
 /Data
 **/Data/

@@ -45,8 +45,10 @@ logging.basicConfig(
 log = logging.getLogger("migraine_model_api")
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.responses import Response
 from starlette.concurrency import run_in_threadpool
 
 # Pipeline modules live next to run_pipeline.py
@@ -62,8 +64,43 @@ _IMAGE_DIR = Path(__file__).resolve().parent / "image"
 if str(_IMAGE_DIR) not in sys.path:
     sys.path.append(str(_IMAGE_DIR))
 
+_LOGO_SVG_PATH = Path(__file__).resolve().parents[1] / "client" / "public" / "logo.svg"
+_FALLBACK_LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="PainPal AI">
+  <defs>
+    <linearGradient id="pp-bg" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B5CF6"/>
+      <stop offset="0.45" stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#2DD4BF"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#pp-bg)"/>
+  <path fill="#fff" fill-rule="evenodd" clip-rule="evenodd" d="M16 7.25c-2.35 0-4.25 1.62-4.25 3.62 0 .98.44 1.87 1.15 2.52-.95.55-1.55 1.45-1.55 2.48 0 1.66 1.46 3 3.25 3 .55 0 1.07-.12 1.52-.33.58 1.52 2.1 2.58 3.88 2.58 2.28 0 4.12-1.72 4.12-3.85 0-1.05-.48-2-1.25-2.62.62-.58 1-1.36 1-2.23 0-2-1.9-3.62-4.25-3.62-.72 0-1.4.15-2 .42A4.18 4.18 0 0 0 16 7.25Zm-2.6 3.62c0-1.15 1.17-2.08 2.6-2.08s2.6.93 2.6 2.08c0 .7-.35 1.33-.9 1.75l.75 1.3h-5.7l.75-1.3c-.55-.42-.9-1.05-.9-1.75Zm-.35 5.38c0-1.04.85-1.88 1.9-1.88h3.1c1.05 0 1.9.84 1.9 1.88 0 1.04-.85 1.88-1.9 1.88h-3.1c-1.05 0-1.9-.84-1.9-1.88Zm2.95 3.5a2.35 2.35 0 0 0 2.3 1.85c1.12 0 2.05-.78 2.28-1.85h-4.58Z"/>
+</svg>"""
+_FAVICON_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+}
+
 _serving: dict[str, Any] = {}
 _mri: dict[str, Any] = {}
+
+
+def _import_image_module(module_name: str):
+    """Load model/image/*.py without shadowing by model/text on sys.path."""
+    module_path = _IMAGE_DIR / f"{module_name}.py"
+    spec = importlib.util.spec_from_file_location(f"mri_image_{module_name}", str(module_path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load MRI module: {module_path}")
+    mod = importlib.util.module_from_spec(spec)
+    image_dir = str(_IMAGE_DIR)
+    saved_path = sys.path[:]
+    if image_dir not in sys.path[:1]:
+        sys.path.insert(0, image_dir)
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path[:] = saved_path
+    return mod
 
 
 def _parse_cors_origins() -> list[str]:
@@ -142,8 +179,20 @@ def load_mri_bundle() -> None:
     """Load ResNet18 checkpoint from model/image/ (migraine vs other). Safe if files missing."""
     try:
         import torch
-        from predict_model import get_transform, predict_from_pil
-        from save_model import load_model_for_inference
+
+        save_mod = _import_image_module("save_model")
+        text_save_mod = sys.modules.get("save_model")
+        sys.modules["save_model"] = save_mod
+        try:
+            predict_mod = _import_image_module("predict_model")
+        finally:
+            if text_save_mod is not None:
+                sys.modules["save_model"] = text_save_mod
+            elif "save_model" in sys.modules:
+                del sys.modules["save_model"]
+        get_transform = predict_mod.get_transform
+        predict_from_pil = predict_mod.predict_from_pil
+        load_model_for_inference = save_mod.load_model_for_inference
     except ImportError as exc:
         _mri.clear()
         _mri["error"] = f"MRI stack unavailable ({exc}). Install torch, torchvision, Pillow."
@@ -339,7 +388,12 @@ async def lifespan(app: FastAPI):
     log.info("Shutdown.")
 
 
-app = FastAPI(title="Migraine & MRI model API", lifespan=lifespan)
+app = FastAPI(
+    title="Migraine & MRI model API",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+)
 
 _cors_origins = _parse_cors_origins()
 if _cors_origins:
@@ -392,8 +446,49 @@ def root():
         "service": "migraine-model-api",
         "docs": "/docs",
         "health": "/health",
+        "favicon": "/favicon.svg",
         "predict_mri": "/predict/mri",
     }
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+def favicon_svg():
+    content = _LOGO_SVG_PATH.read_text(encoding="utf-8") if _LOGO_SVG_PATH.is_file() else _FALLBACK_LOGO_SVG
+    return Response(content=content, media_type="image/svg+xml", headers=_FAVICON_HEADERS)
+
+
+@app.get("/logo.svg", include_in_schema=False)
+def logo_svg():
+    content = _LOGO_SVG_PATH.read_text(encoding="utf-8") if _LOGO_SVG_PATH.is_file() else _FALLBACK_LOGO_SVG
+    return Response(content=content, media_type="image/svg+xml", headers=_FAVICON_HEADERS)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon_ico():
+    # Serve the SVG directly for browsers/proxies that do not follow favicon redirects reliably.
+    if _LOGO_SVG_PATH.is_file():
+        content = _LOGO_SVG_PATH.read_text(encoding="utf-8")
+    else:
+        content = _FALLBACK_LOGO_SVG
+    return Response(content=content, media_type="image/svg+xml", headers=_FAVICON_HEADERS)
+
+
+@app.get("/docs", include_in_schema=False)
+def custom_swagger_docs():
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title="PainPal Model API docs",
+        swagger_favicon_url="/favicon.svg",
+    )
+
+
+@app.get("/redoc", include_in_schema=False)
+def custom_redoc_docs():
+    return get_redoc_html(
+        openapi_url=app.openapi_url,
+        title="PainPal Model API docs",
+        redoc_favicon_url="/favicon.svg",
+    )
 
 
 @app.get("/health")

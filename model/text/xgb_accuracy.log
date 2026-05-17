@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/home/ranith/Documents/projects/LLM/model/text/run_xgb_analysis.py", line 8, in <module>
+    import pandas as pd
+ModuleNotFoundError: No module named 'pandas'

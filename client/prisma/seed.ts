@@ -12,6 +12,8 @@ const prisma = new PrismaClient()
 const SALT_ROUNDS = 10
 const SEED_PASSWORD = 'SeedPassword123!'
 const CSV_SEED_SOURCE = 'trainingData_seed'
+const MRI_SEED_FILE_PREFIX = 'seed-mri-'
+const MRI_MODEL_LABEL = 'resnet18-migraine-v1'
 
 type TrainingAttackRow = Record<string, string>
 
@@ -252,6 +254,131 @@ function trainingFieldsFromRow(row: TrainingAttackRow, rowIndex: number) {
 }
 
 /** Remove prior CSV-seeded events: new rows use csvImportMarker; legacy rows stored JSON in symptomsLog */
+type MriSeedScan = {
+  fileName: string
+  predictedLabel: 'migraine' | 'other'
+  confidence: number
+  probabilities: { other: number; migraine: number }
+  daysAgo: number
+  mimeType?: string
+  fileSizeBytes?: number
+}
+
+/** ResNet18-style outputs for doctor MRI card (matches model/main.py POST /predict/mri). */
+const MRI_SCANS_BY_PATIENT: Record<number, MriSeedScan[]> = {
+  // Sarah Chen — chronic migraine with aura
+  1: [
+    {
+      fileName: `${MRI_SEED_FILE_PREFIX}sarah-axial-t2.png`,
+      predictedLabel: 'migraine',
+      confidence: 0.91,
+      probabilities: { other: 0.09, migraine: 0.91 },
+      daysAgo: 4,
+      fileSizeBytes: 245_120,
+    },
+    {
+      fileName: `${MRI_SEED_FILE_PREFIX}sarah-flair-slice.jpg`,
+      predictedLabel: 'migraine',
+      confidence: 0.84,
+      probabilities: { other: 0.16, migraine: 0.84 },
+      daysAgo: 18,
+      mimeType: 'image/jpeg',
+      fileSizeBytes: 198_400,
+    },
+  ],
+  // John Doe — episodic migraine
+  2: [
+    {
+      fileName: `${MRI_SEED_FILE_PREFIX}john-t1-weighted.png`,
+      predictedLabel: 'migraine',
+      confidence: 0.78,
+      probabilities: { other: 0.22, migraine: 0.78 },
+      daysAgo: 7,
+    },
+  ],
+  // Emily Smith — menstrual migraine
+  3: [
+    {
+      fileName: `${MRI_SEED_FILE_PREFIX}emily-mri-cycle.png`,
+      predictedLabel: 'migraine',
+      confidence: 0.88,
+      probabilities: { other: 0.12, migraine: 0.88 },
+      daysAgo: 2,
+    },
+  ],
+  // Michael Johnson — mixed: older migraine, latest flagged as other (tumor-like folder in training)
+  4: [
+    {
+      fileName: `${MRI_SEED_FILE_PREFIX}michael-followup.png`,
+      predictedLabel: 'other',
+      confidence: 0.82,
+      probabilities: { other: 0.82, migraine: 0.18 },
+      daysAgo: 5,
+    },
+    {
+      fileName: `${MRI_SEED_FILE_PREFIX}michael-baseline.png`,
+      predictedLabel: 'migraine',
+      confidence: 0.73,
+      probabilities: { other: 0.27, migraine: 0.73 },
+      daysAgo: 45,
+    },
+  ],
+}
+
+function daysAgoUtc(days: number): Date {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() - days)
+  d.setUTCHours(14, 30, 0, 0)
+  return d
+}
+
+async function deleteSeededMriScans(profileIds: string[]) {
+  if (!profileIds.length) return
+  const deleted = await prisma.patientMriScan.deleteMany({
+    where: {
+      patientId: { in: profileIds },
+      originalFileName: { startsWith: MRI_SEED_FILE_PREFIX },
+    },
+  })
+  if (deleted.count > 0) {
+    console.log(`Removed ${deleted.count} prior seed MRI scan(s)`)
+  }
+}
+
+async function seedMriScansForPatients(
+  csvPatientMap: { patientNumber: number; profileId: string }[]
+) {
+  const profileIds = csvPatientMap.map((p) => p.profileId)
+  await deleteSeededMriScans(profileIds)
+
+  let created = 0
+  for (const { patientNumber, profileId } of csvPatientMap) {
+    const scans = MRI_SCANS_BY_PATIENT[patientNumber]
+    if (!scans?.length) continue
+
+    for (const scan of scans) {
+      await prisma.patientMriScan.create({
+        data: {
+          patientId: profileId,
+          originalFileName: scan.fileName,
+          mimeType: scan.mimeType ?? 'image/png',
+          fileSizeBytes: scan.fileSizeBytes ?? 220_000,
+          prediction: scan.predictedLabel,
+          confidence: scan.confidence,
+          modelLabel: MRI_MODEL_LABEL,
+          probabilities: scan.probabilities,
+          createdAt: daysAgoUtc(scan.daysAgo),
+        },
+      })
+      created++
+    }
+  }
+
+  console.log(
+    `Created ${created} seed MRI scan(s) with ResNet18 labels (migraine vs other) for patients 1..${csvPatientMap.length}`
+  )
+}
+
 async function deleteCsvSeededEventsForPatient(profileId: string) {
   await prisma.migraineEvent.deleteMany({
     where: {
@@ -626,7 +753,26 @@ async function main() {
     console.warn(`Training data directory not found: ${trainingDataDir}`)
   }
 
+  // 12. MRI → Vercel Blob + live ResNet18 (requires BLOB_READ_WRITE_TOKEN + MODEL_API_URL)
+  if (process.env.BLOB_READ_WRITE_TOKEN?.trim() && process.env.MODEL_API_URL?.trim()) {
+    try {
+      const { seedPatientMriBlob } = await import('../lib/mri/seedPatientMriBlob')
+      const { created, skipped } = await seedPatientMriBlob(prisma)
+      if (skipped.length) console.warn('MRI blob seed skipped:', skipped.join('; '))
+      console.log(`MRI blob + ResNet18: ${created} scan(s) uploaded for seeded patients`)
+    } catch (e) {
+      console.warn('MRI blob seed failed (static fallback):', e)
+      await seedMriScansForPatients(csvPatientMap)
+    }
+  } else {
+    console.warn(
+      'BLOB_READ_WRITE_TOKEN or MODEL_API_URL unset — using static MRI seed. Run: npm run seed:mri-blob',
+    )
+    await seedMriScansForPatients(csvPatientMap)
+  }
+
   console.log('\nSeed completed. Doctor patients list and first patient detail will show data from MongoDB.')
+  console.log('MRI card: /doctor/patients — live scans need npm run seed:mri-blob with Blob + model API.')
   console.log('Doctor login email:', doctorUser.email, '(use your auth flow; seed password:', SEED_PASSWORD + ')')
 }
 
