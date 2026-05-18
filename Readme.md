@@ -91,40 +91,6 @@ Config in `run_pipeline.py`: `DATA_PATH`, `DATA_DIR`, `LABELED_DIR`, `TARGET`, e
 
 ---
 
-## Model API (FastAPI)
-
-Serves `/predict`, `/predict/next-attack`, `/predict/mri`, and `/health` from `model/main.py`.
-
-**Setup (once):**
-
-```bash
-cd model
-python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements-ml.txt
-cp .env.example .env       # set MODEL_API_ENV, CORS_ORIGINS, etc.
-```
-
-**Development** (single process, auto-reload when `MODEL_API_ENV` is not `production`):
-
-```bash
-cd model
-npm run dev
-# or: python main.py
-```
-
-**Production** (like `npm run start` in Next.js — no reload, `MODEL_API_ENV=production`, pipeline routes off):
-
-```bash
-cd model
-npm run start
-# or: bash scripts/start-prod.sh
-```
-
-Set `MODEL_API_URL` / `MODEL_SERVER_PORT` on the Next.js client to this host (e.g. `http://127.0.0.1:8000` locally). On Render/Railway, use their `PORT` env var; the start script reads it automatically.
-
----
-
 ## Client (Next.js)
 
 - **Stack:** Next.js 16, React 19, Prisma, MongoDB, Tailwind, Recharts.
