@@ -1,0 +1,19 @@
+# Full ML server — deploy on Render/Railway/VPS, not Vercel
+main.py
+requirements-ml.txt
+Dockerfile
+Procfile
+
+# Heavy data and training code
+text/
+image/
+venv/
+.venv_metrics/
+**/__pycache__/
+
+# Artifacts (large binaries)
+*.pkl
+*.pt
+*.pth
+*.joblib
+artifacts/
