@@ -1,11 +1,26 @@
 /**
  * Python migraine model FastAPI base URL (no trailing slash).
- * Set MODEL_API_URL in Next.js server env (e.g. client/.env.local).
+ *
+ * Production (Vercel): set MODEL_API_URL to your full `main.py` host on Railway/Render/Fly
+ * (e.g. https://painpal-model.example.com). Do not use localhost. Avoid routing through the
+ * Vercel model shim unless MODEL_UPSTREAM_URL on that project points at the full ML host.
+ *
+ * Local: http://127.0.0.1:8000 after `cd model && python main.py`
  */
 export function tryGetModelApiBaseUrl(): string | null {
   const raw = process.env.MODEL_API_URL?.trim()
   if (!raw) return null
-  return raw.replace(/\/+$/, '')
+  const url = raw.replace(/\/+$/, '')
+  if (
+    process.env.VERCEL === '1' &&
+    (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(url) || /^https?:\/\/0\.0\.0\.0(:\d+)?/i.test(url))
+  ) {
+    console.warn(
+      'MODEL_API_URL points to localhost in Vercel. Set it to a public model API URL or the Vercel model proxy with MODEL_UPSTREAM_URL configured.',
+    )
+    return null
+  }
+  return url
 }
 
 export function getModelApiBaseUrl(): string {

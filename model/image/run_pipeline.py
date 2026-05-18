@@ -15,7 +15,7 @@ from PIL import Image
 import numpy as np
 from sklearn.utils.class_weight import compute_class_weight
 from data_loader import (
-    get_class_folders,
+    get_class_folders,w
     count_images,
     list_migraine_vs_other_paths,
     MIGRAINE_FOLDER_NAMES,

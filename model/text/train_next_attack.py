@@ -253,6 +253,67 @@ def _intensity_training_to_severity10(raw: float) -> float:
     return float(round(float(np.clip(sev, 1.0, 10.0)) * 10) / 10)
 
 
+TYPE_LOW_CONF_THRESHOLD = 0.25
+_HISTORY_TYPE_WINDOW = 10
+
+
+def _dominant_type_from_history(records: list[dict[str, Any]]) -> str | None:
+    """Mode of non-empty Type from the last N records."""
+    window = records[-_HISTORY_TYPE_WINDOW:] if len(records) > _HISTORY_TYPE_WINDOW else records
+    counts: dict[str, int] = {}
+    for r in window:
+        t = str(r.get("Type") or "").strip()
+        if not t:
+            continue
+        counts[t] = counts.get(t, 0) + 1
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda x: x[1])[0]
+
+
+def _apply_type_fallback(
+    model_label: str,
+    proba_dict: dict[str, float],
+    records: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any]]:
+    """When model confidence is low, prefer the patient's dominant logged type."""
+    meta: dict[str, Any] = {
+        "model_label": model_label,
+        "low_confidence": False,
+        "history_fallback": False,
+    }
+    if not proba_dict:
+        return model_label, meta
+    max_prob = float(max(proba_dict.values()))
+    meta["confidence"] = max_prob
+    meta["low_confidence"] = max_prob < TYPE_LOW_CONF_THRESHOLD
+    if max_prob >= TYPE_LOW_CONF_THRESHOLD:
+        return model_label, meta
+    history = _dominant_type_from_history(records)
+    typed_count = sum(1 for r in records if str(r.get("Type") or "").strip())
+    if history and typed_count >= 2:
+        meta["history_fallback"] = True
+        return history, meta
+    return model_label, meta
+
+
+def _adjust_intensity_from_history(records: list[dict[str, Any]], raw: float) -> float:
+    """Blend RF intensity with median training-scale intensity from episode history."""
+    hist = _extract_numeric_history(records, "Intensity")
+    model_sev = _intensity_training_to_severity10(max(0.0, raw))
+    if not hist:
+        return model_sev
+    med_train = float(np.median(hist))
+    hist_sev = _intensity_training_to_severity10(med_train)
+    blended = 0.25 * model_sev + 0.75 * hist_sev
+    return float(round(float(np.clip(blended, 1.0, 10.0)) * 10) / 10)
+
+
+def _top_k_types(proba_dict: dict[str, float], k: int = 3) -> list[dict[str, Any]]:
+    items = sorted(proba_dict.items(), key=lambda x: x[1], reverse=True)[:k]
+    return [{"label": str(label), "probability": float(prob)} for label, prob in items]
+
+
 def run_next_attack_pipeline(data_path: str | None = None, data_dir: str | None = None) -> dict[str, Any]:
     """
     Train next-attack models and save a bundle under artifacts/next_attack_bundle.joblib.
@@ -343,31 +404,43 @@ def predict_next_attack(records: list[dict[str, Any]], bundle: dict[str, Any]) -
     }
 
     type_model = bundle["model_type"]
-    type_label = str(type_model.predict(X)[0])
-    out["next_attack"]["type"]["label"] = type_label
+    model_type_label = str(type_model.predict(X)[0])
+    proba_dict: dict[str, float] = {}
     if hasattr(type_model, "predict_proba"):
         proba = type_model.predict_proba(X)[0]
-        out["next_attack"]["type"]["probabilities"] = {
+        proba_dict = {
             str(type_model.classes_[i]): float(proba[i]) for i in range(len(type_model.classes_))
         }
+        out["next_attack"]["type"]["probabilities"] = proba_dict
+
+    display_label, type_meta = _apply_type_fallback(model_type_label, proba_dict, records)
+    out["next_attack"]["type"]["label"] = display_label
+    out["next_attack"]["type"]["model_label"] = model_type_label
+    out["next_attack"]["type"]["low_confidence"] = type_meta.get("low_confidence", False)
+    out["next_attack"]["type"]["history_fallback"] = type_meta.get("history_fallback", False)
+    if "confidence" in type_meta:
+        out["next_attack"]["type"]["confidence"] = type_meta["confidence"]
+    if proba_dict:
+        out["next_attack"]["type"]["top_k"] = _top_k_types(proba_dict, 3)
 
     for col, model in bundle.get("models_reg", {}).items():
         raw = float(model.predict(X)[0])
         if col == "Duration":
             pred = _adjust_duration_hours(records, raw)
         elif col == "Frequency":
-            pred = int(_adjust_frequency_per_month(records, raw))
+            pred = int(_adjust_frequency_per_month(records, raw)) if len(records) > 1 else 0
         elif col == "Intensity":
-            pred = _intensity_training_to_severity10(max(0.0, raw))
+            pred = _adjust_intensity_from_history(records, raw)
         else:
             pred = max(0.0, raw)
         out["next_attack"]["regression"][col] = pred
 
     for col, model in bundle.get("models_bin", {}).items():
         label = int(model.predict(X)[0])
-        symptom_obj = {"value": label}
+        symptom_obj: dict[str, Any] = {"value": label}
         if hasattr(model, "predict_proba"):
-            prob = float(model.predict_proba(X)[0][1]) if model.predict_proba(X).shape[1] > 1 else float(label)
+            proba_row = model.predict_proba(X)[0]
+            prob = float(proba_row[1]) if proba_row.shape[0] > 1 else float(label)
             symptom_obj["probability"] = prob
         out["next_attack"]["symptoms"][col] = symptom_obj
 

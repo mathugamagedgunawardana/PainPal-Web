@@ -9,7 +9,11 @@ export async function GET(req: NextRequest) {
 
   try {
     const status = await getSeedPredictionSyncStatus(prisma)
-    return NextResponse.json(status)
+    return NextResponse.json(status, {
+      headers: {
+        'Cache-Control': status.running ? 'private, no-cache' : 'private, max-age=30',
+      },
+    })
   } catch (error) {
     console.error('GET /api/model/sync-status failed:', error)
     return NextResponse.json({ error: 'Failed to load model sync status' }, { status: 500 })

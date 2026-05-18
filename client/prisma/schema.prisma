@@ -93,6 +93,21 @@ model PatientProfile {
   communications  Communication[]
   conversations   Conversation[]
   patientMriScans PatientMriScan[]
+  modelCache      PatientModelCache?
+}
+
+/// Cached ML inference results to avoid calling the model API on every analytics page view.
+model PatientModelCache {
+  id                   String         @id @default(auto()) @map("_id") @db.ObjectId
+  patientId            String         @unique @db.ObjectId
+  patient              PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  nextAttack           Json?
+  nextAttackAt         DateTime?
+  latestEventAt        DateTime?
+  eventCount           Int            @default(0)
+  typeDistribution     Json?
+  typeDistributionAt   DateTime?
+  updatedAt            DateTime       @updatedAt
 }
 
 /// Brain MRI uploads from the Painpal mobile app (metadata only; wire object storage for DICOM in production).

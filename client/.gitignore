@@ -36,6 +36,10 @@ yarn-error.log*
 !.env.example
 
 
+# Prisma / seed training exports (local only)
+prisma/*_export.csv
+prisma/*_export.csv~
+
 # vercel
 .vercel
 

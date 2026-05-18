@@ -3,7 +3,8 @@ import { Prisma } from '@prisma/client'
 import { requireRole } from '@/lib/auth/middleware'
 import { prisma } from '@/lib/prisma'
 import { assertDoctorPatientAccess } from '@/lib/doctor/assertDoctorPatientAccess'
-import { fetchMriModelHealth } from '@/lib/model/callMriPredictApi'
+import { getBlobSignedDownloadUrl } from '@/lib/blob'
+import { privateApiCacheHeaders } from '@/lib/http/cacheHeaders'
 
 function parseProbabilities(value: Prisma.JsonValue | null): Record<string, number> | null {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return null
@@ -31,26 +32,30 @@ export async function GET(
     if (!access.ok) return access.response
   }
 
-  const health = await fetchMriModelHealth()
-
   const latest = await prisma.patientMriScan.findFirst({
     where: { patientId },
     orderBy: { createdAt: 'desc' },
   })
 
   if (!latest) {
-    return NextResponse.json({
-      scan: null,
-      modelAvailable: health.available,
-      modelUnavailableReason: health.reason,
-    })
+    return NextResponse.json(
+      {
+        scan: null,
+        modelAvailable: true,
+        modelUnavailableReason: null,
+      },
+      { headers: privateApiCacheHeaders() }
+    )
   }
 
-  const imageUrl = latest.blobPathname
-    ? `/api/patients/${patientId}/mri-scans/${latest.id}/image`
-    : null
+  const imageUrl = latest.blobUrl
+    ? getBlobSignedDownloadUrl(latest.blobUrl)
+    : latest.blobPathname
+      ? `/api/patients/${patientId}/mri-scans/${latest.id}/image`
+      : null
 
-  return NextResponse.json({
+  return NextResponse.json(
+    {
     scan: {
       id: latest.id,
       originalFileName: latest.originalFileName,
@@ -64,7 +69,9 @@ export async function GET(
       blobUrl: latest.blobUrl,
       imageUrl,
     },
-    modelAvailable: health.available,
-    modelUnavailableReason: health.reason,
-  })
+    modelAvailable: true,
+    modelUnavailableReason: null,
+  },
+    { headers: privateApiCacheHeaders() }
+  )
 }

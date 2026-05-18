@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/middleware'
 import { getDoctorUserId } from '@/lib/auth/getDoctorUserId'
 import { prisma } from '@/lib/prisma'
-import { tryGetModelApiBaseUrl } from '@/lib/env/modelApiUrl'
 import {
-  fetchNextAttackPredictionWithReason,
   migraineEventsToModelRecords,
   type MigraineEventDbInput,
+  type PatientNextAttackDto,
 } from '@/lib/model/migraineModelRecords'
+import { getCachedNextAttack, getCachedTypeDistribution } from '@/lib/model/patientModelCache'
+import { privateApiCacheHeaders } from '@/lib/http/cacheHeaders'
 
 const MIGRAINE_EVENT_MODEL_SELECT = {
   startDatetime: true,
@@ -175,108 +176,78 @@ export async function GET(
     return NextResponse.json({ error: 'Patient profile not found' }, { status: 404 })
   }
 
+  const refresh = req.nextUrl.searchParams.get('refresh') === 'true'
   const patientDob = new Date(patientProfile.dob)
-  const recordsForNextAttack = migraineEventsToModelRecords(
-    eventsChrono as MigraineEventDbInput[],
-    patientDob
-  )
-  const nextAttackResult =
-    recordsForNextAttack.length > 0
-      ? await fetchNextAttackPredictionWithReason(recordsForNextAttack)
-      : { dto: null, unavailableReason: 'No migraine episodes on file for this patient.' as string | null }
-  const nextAttack = nextAttackResult.dto
+  const eventsInput = eventsChrono as MigraineEventDbInput[]
+
+  const nextAttackResult = await getCachedNextAttack({
+    patientId,
+    patientDob,
+    events: eventsInput,
+    refresh,
+  })
+  const nextAttack: PatientNextAttackDto | null = nextAttackResult.dto
   const nextAttackUnavailableReason = nextAttackResult.unavailableReason
 
-  // If there are no saved predictions yet, infer directly from this patient's seeded/training events.
-  // This gives per-patient results immediately without waiting for background sync persistence.
-  if (recentInsights.length === 0 && typeCounts.length === 0) {
-    const events = [...eventsChrono].reverse()
+  if (recentInsights.length === 0 && typeCounts.length === 0 && eventsInput.length > 0) {
+    const records = migraineEventsToModelRecords(eventsInput, patientDob)
+    const { typeCounts: cachedBuckets } = await getCachedTypeDistribution({
+      patientId,
+      records,
+      refresh,
+    })
 
-    if (events.length > 0) {
-      const records = migraineEventsToModelRecords(events as MigraineEventDbInput[], patientDob)
-
-      try {
-        const modelBaseUrl = tryGetModelApiBaseUrl()
-        if (modelBaseUrl) {
-          const resp = await fetch(`${modelBaseUrl}/predict`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ records }),
-          })
-
-          if (resp.ok) {
-            const prediction = (await resp.json()) as ModelPredictResponse
-            const bucket = new Map<string, { scoreSum: number; count: number }>()
-            for (const key of Object.keys(TYPE_LABELS)) {
-              bucket.set(key, { scoreSum: 0, count: 0 })
-            }
-
-            for (let i = 0; i < prediction.predicted_type.length; i++) {
-              const raw = prediction.predicted_type[i]
-              const key = enumFromModelLabel(raw)
-              if (!key) continue
-
-              let score = 1
-              const probObj = prediction.probabilities?.[i]
-              if (probObj) {
-                const direct = probObj[raw]
-                if (typeof direct === 'number' && Number.isFinite(direct)) {
-                  score = direct
-                } else {
-                  const normalized = normalizeLabel(raw)
-                  for (const [label, value] of Object.entries(probObj)) {
-                    if (normalizeLabel(label) === normalized && Number.isFinite(value)) {
-                      score = value
-                      break
-                    }
-                  }
-                }
-              }
-
-              const entry = bucket.get(key)
-              if (entry) {
-                entry.scoreSum += score
-                entry.count += 1
-              }
-            }
-
-            const predictions = Object.keys(TYPE_LABELS).map((key) => {
-              const row = bucket.get(key) ?? { scoreSum: 0, count: 0 }
-              const probability = row.count > 0 ? (row.scoreSum / row.count) * 100 : 0
-              const idx = prediction.predicted_type.findIndex((raw) => enumFromModelLabel(raw) === key)
-              const sampleSymptoms = (idx >= 0 ? events[idx]?.detectedSymptoms : undefined)?.slice(0, 4) ?? []
-              return {
-                type: labelFromEnum(key),
-                probability: Math.round(probability * 10) / 10,
-                summary:
-                  row.count > 0
-                    ? `${descriptionFromEnum(key)} Inferred from ${row.count} recent episodes.`
-                    : descriptionFromEnum(key),
-                keySymptoms: sampleSymptoms.length > 0 ? sampleSymptoms : ['No dominant symptoms captured'],
-                impact: impactFromSignals(sampleSymptoms, probability),
-              }
-            })
-
-            const sorted = predictions.sort((a, b) => b.probability - a.probability)
-            const top = sorted[0]
-            return NextResponse.json({
-              generatedAt: new Date().toISOString(),
-              source: 'live model inference from patient migraine events',
-              predictedType: top?.type ?? null,
-              confidence: top?.probability ?? 0,
-              summary: top?.summary ?? 'No prediction available yet',
-              keySymptoms: top?.keySymptoms ?? [],
-              predictions: sorted,
-              nextAttack,
-              nextAttackUnavailableReason,
-              nextAttackDisclaimer:
-                'Forecasts are probabilistic and for decision support only—not a diagnosis or emergency guidance.',
-            })
-          }
-        }
-      } catch (error) {
-        console.error('Live patient analytics model inference failed:', error)
+    if (cachedBuckets.size > 0) {
+      const bucket = new Map<string, { scoreSum: number; count: number }>()
+      for (const key of Object.keys(TYPE_LABELS)) {
+        bucket.set(key, { scoreSum: 0, count: 0 })
       }
+      for (const [rawKey, row] of cachedBuckets) {
+        const enumKey = enumFromModelLabel(rawKey) ?? rawKey
+        const entry = bucket.get(enumKey)
+        if (entry) {
+          entry.scoreSum += row.scoreSum
+          entry.count += row.count
+        }
+      }
+
+      const events = [...eventsChrono].reverse()
+      const predictions = Object.keys(TYPE_LABELS).map((key) => {
+        const row = bucket.get(key) ?? { scoreSum: 0, count: 0 }
+        const probability = row.count > 0 ? (row.scoreSum / row.count) * 100 : 0
+        const sampleSymptoms = events[0]?.detectedSymptoms?.slice(0, 4) ?? []
+        return {
+          type: labelFromEnum(key),
+          probability: Math.round(probability * 10) / 10,
+          summary:
+            row.count > 0
+              ? `${descriptionFromEnum(key)} Inferred from ${row.count} recent episodes.`
+              : descriptionFromEnum(key),
+          keySymptoms: sampleSymptoms.length > 0 ? sampleSymptoms : ['No dominant symptoms captured'],
+          impact: impactFromSignals(sampleSymptoms, probability),
+        }
+      })
+
+      const sorted = predictions.sort((a, b) => b.probability - a.probability)
+      const top = sorted[0]
+      return NextResponse.json(
+        {
+          generatedAt: new Date().toISOString(),
+          source: nextAttackResult.fromCache
+            ? 'cached model inference'
+            : 'model inference (cached for next visit)',
+          predictedType: top?.type ?? null,
+          confidence: top?.probability ?? 0,
+          summary: top?.summary ?? 'No prediction available yet',
+          keySymptoms: top?.keySymptoms ?? [],
+          predictions: sorted,
+          nextAttack,
+          nextAttackUnavailableReason,
+          nextAttackDisclaimer:
+            'Forecasts are probabilistic and for decision support only—not a diagnosis or emergency guidance.',
+        },
+        { headers: privateApiCacheHeaders() }
+      )
     }
   }
 
@@ -307,17 +278,20 @@ export async function GET(
   const sorted = [...predictions].sort((a, b) => b.probability - a.probability)
   const top = sorted[0]
 
-  return NextResponse.json({
-    generatedAt: new Date().toISOString(),
-    source: 'mongodb.aiDiagnosticInsight + migraineEvent',
-    predictedType: top?.type ?? null,
-    confidence: top?.probability ?? 0,
-    summary: top?.summary ?? 'No prediction available yet',
-    keySymptoms: top?.keySymptoms ?? [],
-    predictions: sorted,
-    nextAttack,
-    nextAttackUnavailableReason,
-    nextAttackDisclaimer:
-      'Forecasts are probabilistic and for decision support only—not a diagnosis or emergency guidance.',
-  })
+  return NextResponse.json(
+    {
+      generatedAt: new Date().toISOString(),
+      source: 'mongodb.aiDiagnosticInsight + migraineEvent',
+      predictedType: top?.type ?? null,
+      confidence: top?.probability ?? 0,
+      summary: top?.summary ?? 'No prediction available yet',
+      keySymptoms: top?.keySymptoms ?? [],
+      predictions: sorted,
+      nextAttack,
+      nextAttackUnavailableReason,
+      nextAttackDisclaimer:
+        'Forecasts are probabilistic and for decision support only—not a diagnosis or emergency guidance.',
+    },
+    { headers: privateApiCacheHeaders() }
+  )
 }

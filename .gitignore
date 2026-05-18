@@ -1,4 +1,29 @@
-# Environment — never commit secrets (templates stay via !.env.example)
+# Environment
 .env
 .env.*
 !.env.example
+
+# ML training data & weights (never commit — use object storage / model host disk)
+model/**/Data/
+model/**/data/
+model/**/.venv/
+model/**/.venv_metrics/
+model/**/artifacts/
+model/**/*.csv
+model/**/*.tsv
+model/**/*.parquet
+model/**/*.pkl
+model/**/*.joblib
+model/**/*.pt
+model/**/*.pth
+model/**/*.onnx
+model/**/*.h5
+model/**/*.npy
+model/**/*.npz
+model/**/*.zip
+model/**/*.tar
+model/**/*.tar.gz
+
+# Client seed exports (regenerate locally; do not ship to production)
+client/prisma/*_export.csv
+client/prisma/*_export.csv~

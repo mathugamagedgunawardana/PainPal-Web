@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/index.py": {
-      "excludeFiles": "{image/Data/**,image/.venv/**,venv/**,.venv_metrics/**,text/artifacts/**,**/__pycache__/**}"
+      "excludeFiles": "{image/Data/**,image/data/**,text/Data/**,text/data/**,image/.venv/**,**/.venv/**,venv/**,.venv/**,.venv_metrics/**,text/artifacts/**,**/*.csv,**/*.tsv,**/*.parquet,**/*.pkl,**/*.joblib,**/*.pt,**/*.pth,**/*.onnx,**/*.h5,**/*.npy,**/*.npz,**/*.zip,**/*.tar,**/*.tar.gz,**/__pycache__/**}"
     }
   },
   "rewrites": [

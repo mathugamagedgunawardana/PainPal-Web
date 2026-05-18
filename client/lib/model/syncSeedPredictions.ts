@@ -172,7 +172,15 @@ export async function syncSeedPredictionsFromModel(prisma: PrismaClient): Promis
   }
 }
 
+function isSeedSyncEnabled(): boolean {
+  return (
+    process.env.NODE_ENV !== 'production' || process.env.ENABLE_SEED_MODEL_SYNC === 'true'
+  )
+}
+
 export async function triggerSeedPredictionSync(prisma: PrismaClient): Promise<void> {
+  if (!isSeedSyncEnabled()) return
+
   const now = Date.now()
   if (syncPromise) {
     await syncPromise

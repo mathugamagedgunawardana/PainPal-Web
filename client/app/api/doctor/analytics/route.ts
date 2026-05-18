@@ -5,6 +5,7 @@ import { requireRole } from '@/lib/auth/middleware'
 import { getDoctorUserId } from '@/lib/auth/getDoctorUserId'
 import { prisma } from '@/lib/prisma'
 import { computeMigraineStats } from '@/lib/doctor/migraineStats'
+import { privateApiCacheHeaders } from '@/lib/http/cacheHeaders'
 
 const DOCTOR_404 = {
   error: 'Doctor profile not found',
@@ -319,11 +320,11 @@ export async function GET(req: NextRequest) {
         }),
         prisma.conversation.findMany({
           where: { doctorId: doctorProfile.id, patientId: { in: patientIds } },
-          take: 35,
+          take: 20,
           select: {
             messages: {
-              orderBy: { createdAt: 'asc' },
-              take: 250,
+              orderBy: { createdAt: 'desc' },
+              take: 40,
               select: { createdAt: true, senderRole: true },
             },
           },
@@ -567,7 +568,9 @@ export async function GET(req: NextRequest) {
     let totalMs = 0
     let replyPairs = 0
     for (const c of convos) {
-      const msgs = c.messages
+      const msgs = [...c.messages].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      )
       for (let i = 1; i < msgs.length; i++) {
         if (msgs[i - 1]!.senderRole === 'PATIENT' && msgs[i]!.senderRole === 'DOCTOR') {
           totalMs += new Date(msgs[i]!.createdAt).getTime() - new Date(msgs[i - 1]!.createdAt).getTime()
@@ -621,7 +624,7 @@ export async function GET(req: NextRequest) {
             ? `Charts anchor to your panel’s latest episode (${rangeEnd.toLocaleDateString()}), so older seed data still appears.`
             : 'Charts use the selected period ending with the most recent episode (or today).',
       },
-    })
+    }, { headers: privateApiCacheHeaders() })
   } catch (error) {
     console.error('GET /api/doctor/analytics error:', error)
     const message = error instanceof Error ? error.message : 'Internal server error'

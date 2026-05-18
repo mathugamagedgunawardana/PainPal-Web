@@ -2,18 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/middleware'
 import { getDoctorUserId } from '@/lib/auth/getDoctorUserId'
 import { prisma } from '@/lib/prisma'
-import { computeMigraineStats } from '@/lib/doctor/migraineStats'
+import { loadMigraineStatsByPatientId } from '@/lib/doctor/patientListStats'
+import { privateApiCacheHeaders } from '@/lib/http/cacheHeaders'
 
 const DOCTOR_404 = { error: 'Doctor profile not found', message: 'Log in with a registered doctor account (e.g. dr.johnson@clinic.example.com / SeedPassword123!) to view patients.' } as const
 
-/** GET /api/patients – list patients linked to the current doctor (with computed list fields) */
+/** GET /api/patients – lightweight list for doctor sidebar (no nested migraine event payloads). */
 export async function GET(req: NextRequest) {
   const auth = await requireRole(req, ['ADMIN', 'DOCTOR'])
   if (!auth.authorized) return auth.response!
 
   if (auth.user?.role === 'DOCTOR') {
     try {
-      // Resolve to MongoDB User id (JWT may have "doctor-001" etc – never pass non-ObjectId to Prisma)
       const doctorUserId = await getDoctorUserId(auth.user)
       if (!doctorUserId) {
         return NextResponse.json(DOCTOR_404, { status: 404 })
@@ -27,7 +27,6 @@ export async function GET(req: NextRequest) {
 
       const now = new Date()
 
-      // MongoDB-compatible query: no orderBy/take inside nested include
       const links = await prisma.patientDoctorLink.findMany({
         where: {
           doctorId: doctorProfile.id,
@@ -35,14 +34,36 @@ export async function GET(req: NextRequest) {
         },
         include: {
           patient: {
-            include: {
-              appointments: { where: { doctorId: doctorProfile.id } },
-              migraineEvents: { orderBy: { startDatetime: 'desc' }, take: 120 },
-              medicationGroups: { where: { doctorId: doctorProfile.id, isActive: true } },
+            select: {
+              id: true,
+              name: true,
+              dob: true,
+              gender: true,
+              condition: true,
+              phone: true,
+              email: true,
+              address: true,
+              appointments: {
+                where: { doctorId: doctorProfile.id },
+                select: {
+                  appointmentDate: true,
+                  status: true,
+                },
+              },
+              medicationGroups: {
+                where: { doctorId: doctorProfile.id, isActive: true },
+                select: {
+                  adherenceRate: true,
+                  medications: true,
+                },
+              },
             },
           },
         },
       })
+
+      const patientIds = links.map((l) => l.patient.id)
+      const statsByPatient = await loadMigraineStatsByPatientId(patientIds)
 
       const patients = links.map((link) => {
         const p = link.patient
@@ -51,7 +72,11 @@ export async function GET(req: NextRequest) {
         )
         const nextAppt = appointments.find((a) => new Date(a.appointmentDate) >= now && a.status !== 'CANCELLED')
         const lastAppt = appointments.find((a) => a.status === 'COMPLETED')
-        const stats = computeMigraineStats(p.migraineEvents ?? [])
+        const stats = statsByPatient.get(p.id) ?? {
+          recentEpisodes: 0,
+          migraineDays: 0,
+          riskLevel: 'low' as const,
+        }
         const grps = p.medicationGroups ?? []
         const adherence =
           grps.length && grps.some((g) => g.adherenceRate != null)
@@ -60,7 +85,9 @@ export async function GET(req: NextRequest) {
               )
             : null
         const currentMeds = grps.flatMap((g) => g.medications ?? [])
-        const age = p.dob ? Math.floor((now.getTime() - new Date(p.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null
+        const age = p.dob
+          ? Math.floor((now.getTime() - new Date(p.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+          : null
 
         return {
           id: p.id,
@@ -82,7 +109,7 @@ export async function GET(req: NextRequest) {
         }
       })
 
-      return NextResponse.json(patients)
+      return NextResponse.json(patients, { headers: privateApiCacheHeaders() })
     } catch (error) {
       console.error('GET /api/patients error:', error)
       const message = error instanceof Error ? error.message : 'Internal server error'

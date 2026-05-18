@@ -42,7 +42,7 @@ def _upstream_url() -> str | None:
     return raw.rstrip("/") if raw else None
 
 
-async def _proxy_to_upstream(request: Request, path: str) -> Response:
+async def _proxy_to_upstream(request: Request, path: str, method: str | None = None) -> Response:
     upstream = _upstream_url()
     if not upstream:
         raise HTTPException(
@@ -53,7 +53,8 @@ async def _proxy_to_upstream(request: Request, path: str) -> Response:
             ),
         )
 
-    body = await request.body()
+    request_method = method or request.method
+    body = await request.body() if request_method not in ("GET", "HEAD") else None
     query = f"?{request.url.query}" if request.url.query else ""
     target = f"{upstream}{path}{query}"
     content_type = request.headers.get("content-type", "application/json")
@@ -62,7 +63,7 @@ async def _proxy_to_upstream(request: Request, path: str) -> Response:
         req = urllib.request.Request(
             target,
             data=body,
-            method=request.method,
+            method=request_method,
             headers={"content-type": content_type},
         )
         try:
@@ -134,12 +135,14 @@ def custom_redoc_docs():
 
 
 @app.get("/health")
-def health():
+async def health(request: Request):
+    if _upstream_url():
+        return await _proxy_to_upstream(request, "/health", method="GET")
     return {
         "ok": True,
         "status": "vercel-status-only",
         "model_runtime": "not-loaded-on-vercel",
-        "upstream_configured": _upstream_url() is not None,
+        "upstream_configured": False,
     }
 
 

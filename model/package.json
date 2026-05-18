@@ -1,0 +1,12 @@
+{
+  "name": "painpal-model-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FastAPI migraine ML service (XGBoost, next-attack, MRI). Use after pip install -r requirements-ml.txt",
+  "scripts": {
+    "dev": "python main.py",
+    "start": "bash scripts/start-prod.sh",
+    "start:prod": "bash scripts/start-prod.sh",
+    "start:reload": "MODEL_API_ENV=development uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --reload"
+  }
+}

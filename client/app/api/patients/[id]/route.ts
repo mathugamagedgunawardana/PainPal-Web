@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/middleware'
 import { getDoctorUserId } from '@/lib/auth/getDoctorUserId'
 import { prisma } from '@/lib/prisma'
+import { computeMigraineStats } from '@/lib/doctor/migraineStats'
+import { privateApiCacheHeaders } from '@/lib/http/cacheHeaders'
 
 function formatDate(d: Date): string {
   return new Date(d).toISOString().slice(0, 10)
@@ -18,54 +20,7 @@ function splitMedicationList(s: string | null | undefined): string[] {
   return s.split(',').map((x) => x.trim()).filter(Boolean)
 }
 
-type EventLike = { startDatetime: Date; severity: number }
-
-function computeMigraineStats(events: EventLike[]) {
-  if (!events.length) {
-    return { recentEpisodes: 0, migraineDays: 0, riskLevel: 'low' as const }
-  }
-
-  const latestEventDate = new Date(
-    Math.max(...events.map((e) => new Date(e.startDatetime).getTime()))
-  )
-  const rollingStart = new Date(latestEventDate)
-  rollingStart.setDate(rollingStart.getDate() - 30)
-
-  const recentWindow = events.filter((e) => {
-    const ts = new Date(e.startDatetime).getTime()
-    return ts >= rollingStart.getTime() && ts <= latestEventDate.getTime()
-  })
-
-  const migraineDaySet = new Set(
-    recentWindow
-      .filter((e) => {
-        const d = new Date(e.startDatetime)
-        return d.getUTCFullYear() === latestEventDate.getUTCFullYear()
-          && d.getUTCMonth() === latestEventDate.getUTCMonth()
-      })
-      .map((e) => new Date(e.startDatetime).toISOString().slice(0, 10))
-  )
-
-  const avgSeverity =
-    recentWindow.length > 0
-      ? recentWindow.reduce((sum, e) => sum + (e.severity ?? 0), 0) / recentWindow.length
-      : 0
-
-  const riskLevel =
-    recentWindow.length >= 8 || avgSeverity >= 7
-      ? 'high'
-      : recentWindow.length >= 4 || avgSeverity >= 5
-        ? 'medium'
-        : 'low'
-
-  return {
-    recentEpisodes: recentWindow.length,
-    migraineDays: migraineDaySet.size,
-    riskLevel,
-  }
-}
-
-/** GET /api/patients/[id] – single patient with full relations (for doctor detail view) */
+/** GET /api/patients/[id] – profile, episodes, medications (appointments via GET .../appointments). */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -111,25 +66,8 @@ export async function GET(
           appointments: {
             where: { doctorId: doctorProfile.id },
             orderBy: { appointmentDate: 'desc' },
-            take: 20,
-            include: {
-              doctor: { select: { name: true } },
-              clinicalNotes: {
-                orderBy: { createdAt: 'desc' },
-                take: 50,
-                include: { doctor: { select: { name: true } } },
-              },
-              communications: {
-                orderBy: { createdAt: 'desc' },
-                take: 50,
-                include: { doctor: { select: { name: true } } },
-              },
-              files: {
-                orderBy: { createdAt: 'desc' },
-                take: 50,
-                include: { doctor: { select: { name: true } } },
-              },
-            },
+            take: 5,
+            select: { appointmentDate: true, status: true },
           },
         },
       })
@@ -137,21 +75,6 @@ export async function GET(
       if (!patient) {
         return NextResponse.json({ error: 'Patient not found' }, { status: 404 })
       }
-
-      const [unlinkedNotesRaw, unlinkedCommunicationsRaw] = await Promise.all([
-        prisma.clinicalNote.findMany({
-          where: { patientId, doctorId: doctorProfile.id, appointmentId: null },
-          orderBy: { createdAt: 'desc' },
-          take: 20,
-          include: { doctor: { select: { name: true } } },
-        }),
-        prisma.communication.findMany({
-          where: { patientId, doctorId: doctorProfile.id, appointmentId: null },
-          orderBy: { createdAt: 'desc' },
-          take: 20,
-          include: { doctor: { select: { name: true } } },
-        }),
-      ])
 
       const now = new Date()
       const appointments = patient.appointments || []
@@ -231,63 +154,15 @@ export async function GET(
         })
       }
 
-      const appointmentsList = (patient.appointments || []).map((a) => ({
-        id: a.id,
-        date: formatDate(a.appointmentDate),
-        type: a.appointmentType,
-        doctor: a.doctor?.name ?? 'Doctor',
-        status: a.status,
-        patientPresent: a.patientPresent,
-        visitNotes: a.notes ?? null,
-        clinicalNotes: (a.clinicalNotes || []).map((n) => ({
-          id: n.id,
-          date: formatDate(n.createdAt),
-          note: n.noteContent,
-          author: n.doctor?.name ?? 'Doctor',
-        })),
-        communications: (a.communications || []).map((c) => ({
-          id: c.id,
-          date: formatDate(c.createdAt),
-          type: c.communicationType,
-          message: c.message,
-          channel: c.channel,
-          author: c.doctor?.name ?? '—',
-        })),
-        files: (a.files || []).map((f) => ({
-          id: f.id,
-          title: f.title,
-          fileUrl: f.fileUrl,
-          fileName: f.fileName,
-          createdAt: f.createdAt.toISOString(),
-          uploadedBy: f.doctor?.name ?? 'Doctor',
-        })),
-      }))
-
-      const unlinkedNotes = unlinkedNotesRaw.map((n) => ({
-        id: n.id,
-        date: formatDate(n.createdAt),
-        note: n.noteContent,
-        author: n.doctor?.name ?? 'Doctor',
-      }))
-
-      const unlinkedCommunications = unlinkedCommunicationsRaw.map((c) => ({
-        id: c.id,
-        date: formatDate(c.createdAt),
-        type: c.communicationType,
-        message: c.message,
-        channel: c.channel,
-        author: c.doctor?.name ?? '—',
-      }))
-
-      return NextResponse.json({
-        profile,
-        episodeHistory,
-        medications,
-        medicationGroups,
-        appointments: appointmentsList,
-        unlinkedNotes,
-        unlinkedCommunications,
-      })
+      return NextResponse.json(
+        {
+          profile,
+          episodeHistory,
+          medications,
+          medicationGroups,
+        },
+        { headers: privateApiCacheHeaders() }
+      )
     } catch (error) {
       console.error('Database error:', error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

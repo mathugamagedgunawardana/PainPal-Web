@@ -10,8 +10,14 @@
 # Data folders (datasets, train outputs, etc.)
 /Data
 **/Data/
+**/data/
 image/Data/
 text/Data/
+
+# Local Python envs (must never be committed)
+**/.venv/
+**/.venv_metrics/
+image/.venv/
 
 # Common dataset file types inside model/
 *.csv
@@ -37,3 +43,9 @@ text/Data/
 *.tgz
 *.gz
 artifacts/
+text/artifacts/
+
+# Inference weights (deploy via model host / release assets, not git)
+resnet_brain_model.pt
+xgboost_patient_model.pkl
+label_encoder.pkl

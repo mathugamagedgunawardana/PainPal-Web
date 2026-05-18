@@ -541,6 +541,12 @@ async def predict_mri(file: UploadFile = File(..., description="Brain MRI slice 
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail="Empty upload.")
+    max_mri_bytes = int(os.getenv("MRI_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+    if len(raw) > max_mri_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"MRI file exceeds {max_mri_bytes // (1024 * 1024)} MB limit.",
+        )
 
     log.info("POST /predict/mri filename=%s bytes=%s", file.filename, len(raw))
 
@@ -683,22 +689,37 @@ async def pipeline_run_mri(data_dir: str | None = None):
     return {"status": "completed", "health": health()}
 
 
+def _server_port() -> int:
+    """PORT (Render/Railway/Fly) overrides MODEL_SERVER_PORT."""
+    raw = os.getenv("MODEL_SERVER_PORT") or os.getenv("PORT") or "8000"
+    return int(raw)
+
+
 if __name__ == "__main__":
     import uvicorn
 
     host = os.getenv("MODEL_SERVER_HOST", "0.0.0.0")
-    port = int(os.getenv("MODEL_SERVER_PORT", "8000"))
+    port = _server_port()
     uv_level = _LOG_LEVEL.lower()
     if uv_level not in ("critical", "error", "warning", "info", "debug"):
         uv_level = "info"
     access = _env_flag("MODEL_API_ACCESS_LOG", False)
+    reload = _env_flag("MODEL_API_RELOAD", os.getenv("MODEL_API_ENV", "development").strip().lower() != "production")
     for _lg_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(_lg_name).setLevel(_root_level)
-    log.info("Starting uvicorn %s:%s uvicorn_log_level=%s access_log=%s", host, port, uv_level, access)
+    log.info(
+        "Starting uvicorn %s:%s env=%s reload=%s access_log=%s (production: npm run start)",
+        host,
+        port,
+        os.getenv("MODEL_API_ENV", "development"),
+        reload,
+        access,
+    )
     uvicorn.run(
-        app,
+        "main:app" if reload else app,
         host=host,
         port=port,
         log_level=uv_level,
         access_log=access,
+        reload=reload,
     )

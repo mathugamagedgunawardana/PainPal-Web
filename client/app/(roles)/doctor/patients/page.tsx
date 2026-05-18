@@ -91,12 +91,16 @@ export default function PatientsPage() {
     episodeHistory: EpisodeHistoryItem[]
     medications: MedicationItem[]
     medicationGroups: MedicationGroupRow[]
+  } | null>(null)
+  const [appointmentsData, setAppointmentsData] = useState<{
     appointments: AppointmentRow[]
     unlinkedNotes: UnlinkedNoteRow[]
     unlinkedCommunications: UnlinkedCommRow[]
   } | null>(null)
+  const [appointmentsLoading, setAppointmentsLoading] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [careTabActive, setCareTabActive] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [patientListCollapsed, setPatientListCollapsed] = useState(false)
   const [modelSyncRunning, setModelSyncRunning] = useState(false)
@@ -115,23 +119,20 @@ export default function PatientsPage() {
     let timer: ReturnType<typeof setTimeout> | undefined
 
     const poll = async () => {
-      let nextMs = 10000
       try {
-        const res = await fetch('/api/model/sync-status', { credentials: 'include', cache: 'no-store' })
+        const res = await fetch('/api/model/sync-status', { credentials: 'include' })
         if (!res.ok) return
         const data = (await res.json()) as { running?: boolean; pendingSeedEvents?: number }
         const running = Boolean(data.running)
-        nextMs = running ? 2500 : 10000
         if (!cancelled) {
           setModelSyncRunning(running)
           setModelSyncPending(typeof data.pendingSeedEvents === 'number' ? data.pendingSeedEvents : 0)
         }
+        if (!cancelled && running) {
+          timer = setTimeout(poll, 10000)
+        }
       } catch {
         // Ignore transient polling errors in UI.
-      } finally {
-        if (!cancelled) {
-          timer = setTimeout(poll, nextMs)
-        }
       }
     }
 
@@ -175,10 +176,38 @@ export default function PatientsPage() {
     return () => { cancelled = true }
   }, [])
 
+  const fetchPatientAppointments = useCallback((patientId: string) => {
+    setAppointmentsLoading(true)
+    fetch(`/api/patients/${patientId}/appointments`, { credentials: 'include' })
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load appointments')
+        return res.json()
+      })
+      .then((data: {
+        appointments?: AppointmentRow[]
+        unlinkedNotes?: UnlinkedNoteRow[]
+        unlinkedCommunications?: UnlinkedCommRow[]
+      }) => {
+        setAppointmentsData({
+          appointments: data.appointments ?? [],
+          unlinkedNotes: data.unlinkedNotes ?? [],
+          unlinkedCommunications: data.unlinkedCommunications ?? [],
+        })
+      })
+      .catch(() => {
+        setAppointmentsData({ appointments: [], unlinkedNotes: [], unlinkedCommunications: [] })
+      })
+      .finally(() => {
+        setAppointmentsLoading(false)
+      })
+  }, [])
+
   const fetchPatientDetail = useCallback((patientId: string) => {
     setDetailLoading(true)
     setDetailError(null)
     setDetailData(null)
+    setAppointmentsData(null)
+    setCareTabActive(false)
     fetch(`/api/patients/${patientId}`, { credentials: 'include' })
       .then((res) => {
         if (!res.ok) throw new Error(res.status === 404 ? 'Patient not found' : 'Failed to load patient detail')
@@ -189,18 +218,12 @@ export default function PatientsPage() {
         episodeHistory: EpisodeHistoryItem[]
         medications: MedicationItem[]
         medicationGroups?: MedicationGroupRow[]
-        appointments: AppointmentRow[]
-        unlinkedNotes?: UnlinkedNoteRow[]
-        unlinkedCommunications?: UnlinkedCommRow[]
       }) => {
         setSelectedPatient(data.profile)
         setDetailData({
           episodeHistory: data.episodeHistory ?? [],
           medications: data.medications ?? [],
           medicationGroups: data.medicationGroups ?? [],
-          appointments: data.appointments ?? [],
-          unlinkedNotes: data.unlinkedNotes ?? [],
-          unlinkedCommunications: data.unlinkedCommunications ?? [],
         })
       })
       .catch((err) => {
@@ -210,6 +233,13 @@ export default function PatientsPage() {
         setDetailLoading(false)
       })
   }, [])
+
+  const refreshPatientCare = useCallback(
+    (patientId: string) => {
+      fetchPatientAppointments(patientId)
+    },
+    [fetchPatientAppointments]
+  )
 
   useEffect(() => {
     const id = searchParams.get('patient')
@@ -233,9 +263,15 @@ export default function PatientsPage() {
 
   const episodeHistory = detailData?.episodeHistory ?? []
   const medicationGroups = detailData?.medicationGroups ?? []
-  const appointments = detailData?.appointments ?? []
-  const unlinkedNotes = detailData?.unlinkedNotes ?? []
-  const unlinkedCommunications = detailData?.unlinkedCommunications ?? []
+  const appointments = appointmentsData?.appointments ?? []
+  const unlinkedNotes = appointmentsData?.unlinkedNotes ?? []
+  const unlinkedCommunications = appointmentsData?.unlinkedCommunications ?? []
+
+  useEffect(() => {
+    if (!careTabActive || !selectedPatient?.id) return
+    if (appointmentsData && !appointmentsLoading) return
+    fetchPatientAppointments(selectedPatient.id)
+  }, [careTabActive, selectedPatient?.id, appointmentsData, appointmentsLoading, fetchPatientAppointments])
 
   return (
     <div className="min-h-screen bg-gradient-to-br via-purple-50 to-teal-50 p-3 sm:p-4 md:p-6 lg:p-8">
@@ -627,7 +663,11 @@ export default function PatientsPage() {
                         <span className="hidden sm:inline">History & medications</span>
                         <span className="sm:hidden">History & meds</span>
                       </TabsTrigger>
-                      <TabsTrigger value="care" className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-3 sm:px-4">
+                      <TabsTrigger
+                        value="care"
+                        className="rounded-lg flex items-center gap-1 text-xs sm:text-sm px-3 sm:px-4"
+                        onClick={() => setCareTabActive(true)}
+                      >
                         <Calendar className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
                         <span className="hidden sm:inline">Appointments & visit records</span>
                         <span className="sm:hidden">Visits</span>
@@ -654,12 +694,17 @@ export default function PatientsPage() {
                     </TabsContent>
 
                     <TabsContent value="care" className="mt-0 space-y-8">
+                      {appointmentsLoading && !appointmentsData ? (
+                        <div className="flex justify-center py-8">
+                          <Loader2 className="h-8 w-8 animate-spin text-purple-600" aria-label="Loading appointments" />
+                        </div>
+                      ) : null}
                       <AppointmentsTab
                         patientId={selectedPatient.id}
                         appointments={appointments}
                         unlinkedNotes={unlinkedNotes}
                         unlinkedCommunications={unlinkedCommunications}
-                        onUpdated={() => fetchPatientDetail(selectedPatient.id)}
+                        onUpdated={() => refreshPatientCare(selectedPatient.id)}
                       />
                       <ReportsTab />
                     </TabsContent>
