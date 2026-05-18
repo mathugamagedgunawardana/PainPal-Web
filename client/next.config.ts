@@ -3,12 +3,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const monorepoRoot = path.resolve(currentDir, "..");
+/** On Vercel, trace only the Next app — not sibling `model/` training data or weights. */
+const tracingRoot =
+  process.env.VERCEL === "1" ? currentDir : path.resolve(currentDir, "..");
 
 const nextConfig: NextConfig = {
-  outputFileTracingRoot: monorepoRoot,
+  outputFileTracingRoot: tracingRoot,
   turbopack: {
-    root: monorepoRoot,
+    root: tracingRoot,
   },
   images: {
     remotePatterns: [
@@ -17,6 +19,28 @@ const nextConfig: NextConfig = {
         hostname: "images.unsplash.com",
       },
     ],
+  },
+  async headers() {
+    return [
+      {
+        source: "/logo.svg",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+      {
+        source: "/_next/static/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+    ];
   },
 };
 

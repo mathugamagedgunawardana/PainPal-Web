@@ -3,10 +3,10 @@ import { requireRole } from '@/lib/auth/middleware'
 import { prisma } from '@/lib/prisma'
 import { assertDoctorPatientAccess } from '@/lib/doctor/assertDoctorPatientAccess'
 import { getPatientProfileForUser } from '@/lib/patient/getPatientProfileForUser'
-import { readPrivateBlob } from '@/lib/blob'
+import { getBlobSignedDownloadUrl, readPrivateBlob } from '@/lib/blob'
 
 /**
- * GET /api/patients/:id/mri-scans/:scanId/image — stream private Blob MRI for doctor/patient.
+ * GET /api/patients/:id/mri-scans/:scanId/image — redirect to signed Blob URL (no byte proxy).
  */
 export async function GET(
   req: NextRequest,
@@ -34,6 +34,11 @@ export async function GET(
     }
   }
 
+  if (scan.blobUrl) {
+    const signed = getBlobSignedDownloadUrl(scan.blobUrl)
+    return NextResponse.redirect(signed, 302)
+  }
+
   try {
     const { buffer, contentType } = await readPrivateBlob(scan.blobPathname)
     return new NextResponse(new Uint8Array(buffer), {
@@ -43,7 +48,7 @@ export async function GET(
       },
     })
   } catch (e) {
-    console.error('MRI image proxy error:', e)
+    console.error('MRI image fallback proxy error:', e)
     return NextResponse.json({ error: 'Failed to load MRI image' }, { status: 502 })
   }
 }

@@ -2,7 +2,70 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/middleware'
 import { prisma } from '@/lib/prisma'
 import { assertDoctorPatientAccess } from '@/lib/doctor/assertDoctorPatientAccess'
+import {
+  appointmentInclude,
+  mapAppointmentsList,
+} from '@/lib/doctor/formatPatientAppointments'
+import { privateApiCacheHeaders } from '@/lib/http/cacheHeaders'
 import type { AppointmentStatus } from '@prisma/client'
+
+/** GET /api/patients/[id]/appointments — visit list with nested notes/comms/files (lazy-loaded). */
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(req, ['ADMIN', 'DOCTOR'])
+  if (!auth.authorized) return auth.response!
+
+  const { id: patientId } = await params
+  if (!patientId) {
+    return NextResponse.json({ error: 'Patient ID required' }, { status: 400 })
+  }
+
+  const access = await assertDoctorPatientAccess(auth.user!, patientId)
+  if (!access.ok) return access.response
+
+  const [appointmentsRaw, unlinkedNotesRaw, unlinkedCommunicationsRaw] = await Promise.all([
+    prisma.appointment.findMany({
+      where: { patientId, doctorId: access.doctorProfileId },
+      orderBy: { appointmentDate: 'desc' },
+      take: 20,
+      include: appointmentInclude,
+    }),
+    prisma.clinicalNote.findMany({
+      where: { patientId, doctorId: access.doctorProfileId, appointmentId: null },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: { doctor: { select: { name: true } } },
+    }),
+    prisma.communication.findMany({
+      where: { patientId, doctorId: access.doctorProfileId, appointmentId: null },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: { doctor: { select: { name: true } } },
+    }),
+  ])
+
+  const formatDate = (d: Date) => new Date(d).toISOString().slice(0, 10)
+
+  return NextResponse.json(
+    {
+      appointments: mapAppointmentsList(appointmentsRaw),
+      unlinkedNotes: unlinkedNotesRaw.map((n) => ({
+        id: n.id,
+        date: formatDate(n.createdAt),
+        note: n.noteContent,
+        author: n.doctor?.name ?? 'Doctor',
+      })),
+      unlinkedCommunications: unlinkedCommunicationsRaw.map((c) => ({
+        id: c.id,
+        date: formatDate(c.createdAt),
+        type: c.communicationType,
+        message: c.message,
+        channel: c.channel,
+        author: c.doctor?.name ?? '—',
+      })),
+    },
+    { headers: privateApiCacheHeaders() }
+  )
+}
 
 /**
  * POST /api/patients/[id]/appointments — doctor schedules a new appointment (default status SCHEDULED).

@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/middleware'
 import { getPatientUserId } from '@/lib/auth/getPatientUserId'
 import { prisma } from '@/lib/prisma'
-import {
-  fetchNextAttackPredictionWithReason,
-  migraineEventsToModelRecords,
-  type MigraineEventDbInput,
-} from '@/lib/model/migraineModelRecords'
+import { migraineEventsToModelRecords, type MigraineEventDbInput } from '@/lib/model/migraineModelRecords'
+import { getCachedNextAttack } from '@/lib/model/patientModelCache'
+import { privateApiCacheHeaders } from '@/lib/http/cacheHeaders'
 
 /** GET /api/patient/analytics – aggregated analytics for the current patient (PATIENT role only) */
 export async function GET(req: NextRequest) {
@@ -130,16 +128,20 @@ export async function GET(req: NextRequest) {
       })
     ).size
 
-    const recordsForNextAttack = migraineEventsToModelRecords(
-      events as MigraineEventDbInput[],
-      new Date(patient.dob)
-    )
-    const nextAttackResult =
-      recordsForNextAttack.length > 0
-        ? await fetchNextAttackPredictionWithReason(recordsForNextAttack)
-        : { dto: null, unavailableReason: 'Log migraine episodes to see a next-attack forecast.' as string | null }
+    const refresh = req.nextUrl.searchParams.get('refresh') === 'true'
+    const patientDob = new Date(patient.dob)
+    const eventsInput = events as MigraineEventDbInput[]
 
-    return NextResponse.json({
+    const nextAttackResult = await getCachedNextAttack({
+      patientId: patient.id,
+      patientDob,
+      events: eventsInput,
+      refresh,
+    })
+    const nextAttack = nextAttackResult.dto
+
+    return NextResponse.json(
+      {
       summary: {
         episodesLast30Days,
         migraineDaysThisMonth,
@@ -150,11 +152,13 @@ export async function GET(req: NextRequest) {
       severityDistribution,
       triggers,
       totalEpisodes: events.length,
-      nextAttack: nextAttackResult.dto,
+      nextAttack,
       nextAttackUnavailableReason: nextAttackResult.unavailableReason,
       nextAttackDisclaimer:
         'Forecasts are probabilistic and for decision support only—not a diagnosis or emergency guidance.',
-    })
+    },
+      { headers: privateApiCacheHeaders() }
+    )
   } catch (error) {
     console.error('GET /api/patient/analytics error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

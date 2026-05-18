@@ -66,7 +66,6 @@ export function DoctorPatientMriPredictionCard({ patientId }: Props) {
     try {
       const res = await fetch(`/api/patients/${patientId}/mri-prediction`, {
         credentials: 'include',
-        cache: 'no-store',
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))

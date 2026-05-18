@@ -112,3 +112,10 @@ migraine_data.csv
 | **run_xgb_analysis.py** | Full analysis (no save). |
 | **trainModel.py** | Simple train on `patient_data.csv` and save .pkl. |
 | **main.py** | Minimal train script on `patient_data.csv`. |
+| **train_next_attack.py** | Next-attack RF bundle; inference returns `top_k`, confidence, and history fallback (no retrain required for UI tiers). |
+
+---
+
+## Next-attack forecast (UI)
+
+`POST /predict/next-attack` serves probabilities and optional history fallback when model confidence is low. The Next.js and PainPal clients show top-3 patterns, confidence tiers, and stricter symptom thresholds (≥55%) without retraining the bundle.

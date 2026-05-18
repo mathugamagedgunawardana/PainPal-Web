@@ -541,6 +541,12 @@ async def predict_mri(file: UploadFile = File(..., description="Brain MRI slice 
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail="Empty upload.")
+    max_mri_bytes = int(os.getenv("MRI_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+    if len(raw) > max_mri_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"MRI file exceeds {max_mri_bytes // (1024 * 1024)} MB limit.",
+        )
 
     log.info("POST /predict/mri filename=%s bytes=%s", file.filename, len(raw))
 

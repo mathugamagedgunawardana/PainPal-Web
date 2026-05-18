@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { isBlobConfigured, uploadToBlob } from '@/lib/blob'
+import { isBlobConfigured, readPrivateBlob, uploadToBlob } from '@/lib/blob'
 import { callMriPredictApi, type MriPredictApiResult } from '@/lib/model/callMriPredictApi'
 
 export const MRI_MODEL_LABEL = 'resnet18-migraine-v1'
@@ -11,6 +11,14 @@ export type PersistMriScanInput = {
   originalFileName: string
   mimeType?: string
   blobKeyPrefix?: string
+}
+
+export type PersistMriScanFromBlobInput = {
+  patientId: string
+  blobPathname: string
+  blobUrl?: string
+  originalFileName: string
+  mimeType?: string
 }
 
 export type PersistMriScanResult = MriPredictApiResult & {
@@ -68,6 +76,42 @@ export async function persistMriScanWithModel(
     ...modelResult,
     scanId: row.id,
     blobUrl,
+    blobPathname,
+  }
+}
+
+/** Predict from an existing private Blob (client uploaded via /api/mri/upload). */
+export async function persistMriScanFromBlob(
+  input: PersistMriScanFromBlobInput,
+): Promise<PersistMriScanResult> {
+  const { patientId, blobPathname, blobUrl, originalFileName, mimeType } = input
+  const { buffer, contentType } = await readPrivateBlob(blobPathname)
+
+  const modelResult = await callMriPredictApi(
+    buffer,
+    originalFileName,
+    mimeType ?? contentType ?? 'application/octet-stream',
+  )
+
+  const row = await prisma.patientMriScan.create({
+    data: {
+      patientId,
+      originalFileName,
+      mimeType: mimeType ?? contentType ?? null,
+      fileSizeBytes: buffer.length,
+      blobUrl: blobUrl ?? null,
+      blobPathname,
+      prediction: modelResult.predicted_label,
+      confidence: modelResult.confidence ?? 0,
+      modelLabel: MRI_MODEL_LABEL,
+      probabilities: modelResult.probabilities as Prisma.InputJsonValue,
+    },
+  })
+
+  return {
+    ...modelResult,
+    scanId: row.id,
+    blobUrl: blobUrl ?? undefined,
     blobPathname,
   }
 }

@@ -1,4 +1,4 @@
-import { del, get, put, type PutBlobResult } from '@vercel/blob';
+import { del, get, getDownloadUrl, put, type PutBlobResult } from '@vercel/blob';
 
 export type BlobAccess = 'public' | 'private';
 
@@ -85,6 +85,11 @@ export async function readPrivateBlob(pathname: string): Promise<{
   }
   const buffer = Buffer.from(await new Response(result.stream).arrayBuffer())
   return { buffer, contentType: result.blob.contentType ?? undefined }
+}
+
+/** Short-lived signed URL for private blobs (avoids proxying bytes through Next.js). */
+export function getBlobSignedDownloadUrl(blobUrl: string): string {
+  return getDownloadUrl(blobUrl)
 }
 
 export async function deleteBlob(url: string): Promise<void> {

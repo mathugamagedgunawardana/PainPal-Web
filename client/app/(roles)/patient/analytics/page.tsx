@@ -26,15 +26,8 @@ import {
   Cell,
   CartesianGrid,
 } from 'recharts'
-
-type NextAttackDto = {
-  basedOnRecords?: number
-  predictedType?: string
-  duration?: number | null
-  frequency?: number | null
-  intensity?: number | null
-  symptomsLikely?: Array<{ name: string; probability?: number }>
-}
+import { NextAttackForecastCard } from '@/components/forecast/NextAttackForecastCard'
+import type { PatientNextAttackDto } from '@/lib/model/migraineModelRecords'
 
 type AnalyticsData = {
   summary: {
@@ -47,7 +40,7 @@ type AnalyticsData = {
   severityDistribution: { level: number; count: number; label: string }[]
   triggers: { name: string; count: number }[]
   totalEpisodes: number
-  nextAttack?: NextAttackDto | null
+  nextAttack?: PatientNextAttackDto | null
   nextAttackUnavailableReason?: string | null
   nextAttackDisclaimer?: string
 }
@@ -268,75 +261,13 @@ export default function PatientAnalyticsPage() {
       ) : null}
 
       {data.nextAttack?.predictedType ? (
-        <Card className="border-amber-200 bg-amber-50/80">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2 text-amber-950">
-              <AlertCircle className="w-5 h-5" />
-              Your next attack (forecast)
-            </CardTitle>
-            <p className="text-sm text-amber-900/90 font-normal">
-              From your last {data.nextAttack.basedOnRecords ?? '—'} logged episode
-              {data.nextAttack.basedOnRecords === 1 ? '' : 's'}. For planning only—not medical advice.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-              <div className="rounded-lg bg-white border border-amber-100 p-3">
-                <p className="text-xs text-amber-800 font-medium uppercase">Likely type</p>
-                <p className="text-base font-semibold text-gray-900 mt-0.5">
-                  {formatTypeLabel(data.nextAttack.predictedType)}
-                </p>
-              </div>
-              {typeof data.nextAttack.duration === 'number' ? (
-                <div className="rounded-lg bg-white border border-amber-100 p-3">
-                  <p className="text-xs text-amber-800 font-medium uppercase">Est. hours</p>
-                  <p className="text-base font-semibold text-gray-900 mt-0.5">
-                    {data.nextAttack.duration.toFixed(1)}
-                  </p>
-                </div>
-              ) : null}
-              {typeof data.nextAttack.frequency === 'number' ? (
-                <div className="rounded-lg bg-white border border-amber-100 p-3">
-                  <p className="text-xs text-amber-800 font-medium uppercase">Est. episodes / mo</p>
-                  <p className="text-base font-semibold text-gray-900 mt-0.5">
-                    {Math.round(data.nextAttack.frequency)}
-                  </p>
-                </div>
-              ) : null}
-              {typeof data.nextAttack.intensity === 'number' ? (
-                <div className="rounded-lg bg-white border border-amber-100 p-3">
-                  <p className="text-xs text-amber-800 font-medium uppercase">Est. intensity</p>
-                  <p className="text-base font-semibold text-gray-900 mt-0.5">
-                    {data.nextAttack.intensity.toFixed(1)}
-                    <span className="text-gray-500 font-normal text-sm"> /10</span>
-                  </p>
-                </div>
-              ) : null}
-            </div>
-            {data.nextAttack.symptomsLikely && data.nextAttack.symptomsLikely.length > 0 ? (
-              <div>
-                <p className="text-xs font-medium text-amber-900 mb-1.5">Symptoms more likely next time</p>
-                <div className="flex flex-wrap gap-2">
-                  {data.nextAttack.symptomsLikely.slice(0, 12).map((s) => (
-                    <span
-                      key={s.name}
-                      className="px-2.5 py-1 text-xs rounded-full bg-white text-amber-950 border border-amber-200"
-                    >
-                      {s.name}
-                      {typeof s.probability === 'number'
-                        ? ` (${Math.round(s.probability * 100)}%)`
-                        : ''}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {data.nextAttackDisclaimer ? (
-              <p className="text-xs text-amber-900/75">{data.nextAttackDisclaimer}</p>
-            ) : null}
-          </CardContent>
-        </Card>
+        <NextAttackForecastCard
+          nextAttack={data.nextAttack}
+          disclaimer={data.nextAttackDisclaimer}
+          variant="patient"
+        />
       ) : null}
+
 
       {!hasEpisodes ? (
         <Card>

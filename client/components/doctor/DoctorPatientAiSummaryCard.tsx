@@ -31,7 +31,6 @@ export function DoctorPatientAiSummaryCard({ patientId }: Props) {
     try {
       const res = await fetch(`/api/patients/${patientId}/ai-summary`, {
         credentials: 'include',
-        cache: 'no-store',
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))

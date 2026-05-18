@@ -1,0 +1,8 @@
+# Next.js app only — never upload the Python model tree to the web project.
+../model
+../model/**
+../*.pkl
+../*.pt
+../*.csv
+../PIPELINE.md
+../Final Report.docx

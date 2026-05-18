@@ -212,7 +212,15 @@ export function migraineEventsToModelRecords(
 export type NextAttackApiResponse = {
   based_on_records?: number
   next_attack?: {
-    type?: { label?: string; probabilities?: Record<string, number> }
+    type?: {
+      label?: string
+      probabilities?: Record<string, number>
+      top_k?: Array<{ label: string; probability: number }>
+      confidence?: number
+      low_confidence?: boolean
+      model_label?: string
+      history_fallback?: boolean
+    }
     regression?: Record<string, number>
     symptoms?: Record<string, { value?: number; probability?: number }>
   }
@@ -226,23 +234,39 @@ export type PatientNextAttackDto = {
   duration: number | null
   frequency: number | null
   intensity: number | null
-  /** Symptoms predicted as likely for the next attack (value=1 or prob ≥ 0.5). */
+  /** Symptoms predicted as likely for the next attack (prob ≥ threshold, capped). */
   symptomsLikely: Array<{ name: string; probability?: number }>
+  /** Optional presentation fields (set by enrichPatientNextAttackDto). */
+  topTypes?: Array<{ label: string; probability: number }>
+  confidenceTier?: 'high' | 'medium' | 'low'
+  typeConfidencePercent?: number | null
+  usedHistoryFallback?: boolean
+  modelPredictedType?: string
+  displayDisclaimer?: string
+  confidenceCaption?: string
 }
+
+const SYMPTOM_MIN_PROB = 0.55
+const SYMPTOM_MAX_DISPLAY = 5
 
 export function normalizeNextAttackForClient(raw: NextAttackApiResponse | null): PatientNextAttackDto | null {
   if (!raw?.next_attack) return null
   const na = raw.next_attack
   const reg = na.regression ?? {}
   const sym = na.symptoms ?? {}
-  const likely: PatientNextAttackDto['symptomsLikely'] = []
+  const likelyCandidates: PatientNextAttackDto['symptomsLikely'] = []
   for (const [name, val] of Object.entries(sym)) {
     const v = val as { value?: number; probability?: number }
     const prob = v.probability
-    if (v.value === 1 || (typeof prob === 'number' && prob >= 0.5)) {
-      likely.push({ name, probability: prob })
+    if (typeof prob === 'number' && prob >= SYMPTOM_MIN_PROB) {
+      likelyCandidates.push({ name, probability: prob })
+    } else if (v.value === 1 && (prob == null || prob >= SYMPTOM_MIN_PROB)) {
+      likelyCandidates.push({ name, probability: prob })
     }
   }
+  const likely = likelyCandidates
+    .sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0))
+    .slice(0, SYMPTOM_MAX_DISPLAY)
   const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : null)
   const dur = num(reg.Duration ?? reg.duration)
   const freqRaw = num(reg.Frequency ?? reg.frequency)
@@ -251,14 +275,21 @@ export function normalizeNextAttackForClient(raw: NextAttackApiResponse | null):
     freqRaw == null ? null : Math.round(Math.min(31, Math.max(0, freqRaw)))
   const intensity =
     intenRaw == null ? null : Math.round(Math.min(10, Math.max(1, intenRaw)) * 10) / 10
+  const basedOnRecords = raw.based_on_records ?? 0
+  const displayDisclaimer =
+    basedOnRecords === 1
+      ? 'Limited history — forecast may change as you log more episodes.'
+      : undefined
+
   return {
-    basedOnRecords: raw.based_on_records ?? 0,
+    basedOnRecords,
     predictedType: na.type?.label ?? '',
     typeProbabilities: na.type?.probabilities ?? {},
     duration: dur,
-    frequency,
+    frequency: basedOnRecords === 1 ? null : frequency,
     intensity,
     symptomsLikely: likely,
+    displayDisclaimer,
   }
 }
 

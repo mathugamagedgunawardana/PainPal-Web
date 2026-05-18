@@ -694,8 +694,14 @@ async function main() {
     console.log('Created sample appointment file for first patient')
   }
 
-  // 11. Import CSV attack rows from model/text/Data/traningData for seeded patients 1..4
-  const trainingDataDir = path.resolve(__dirname, '..', '..', 'model', 'text', 'Data', 'traningData')
+  // 11. Optional: import CSV rows from local training data (never required on Vercel/production).
+  // Set SEED_TRAINING_CSV_DIR to a folder of patient_*_migraine_attacks.csv files, or use default in dev only.
+  const defaultTrainingDir = path.resolve(__dirname, '..', '..', 'model', 'text', 'Data', 'traningData')
+  const trainingDataDir =
+    process.env.SEED_TRAINING_CSV_DIR?.trim() ||
+    (process.env.NODE_ENV !== 'production' && fs.existsSync(defaultTrainingDir)
+      ? defaultTrainingDir
+      : '')
   const csvPatientMap = [
     { patientNumber: 1, profileId: patients[0]?.profileId }, // Sarah
     { patientNumber: 2, profileId: patients[1]?.profileId }, // John
@@ -703,7 +709,7 @@ async function main() {
     { patientNumber: 4, profileId: patients[3]?.profileId }, // Michael
   ].filter((item): item is { patientNumber: number; profileId: string } => !!item.profileId)
 
-  if (fs.existsSync(trainingDataDir)) {
+  if (trainingDataDir && fs.existsSync(trainingDataDir)) {
     /** Episodes land in random days across this many past months (relative to seed run time). */
     const EPISODE_MONTH_SPREAD = 15
     const episodeAnchor = new Date()
@@ -750,7 +756,9 @@ async function main() {
 
     console.log('Imported CSV symptom rows from traningData for seeded patients 1..4')
   } else {
-    console.warn(`Training data directory not found: ${trainingDataDir}`)
+    console.warn(
+      'Skipped CSV training import (set SEED_TRAINING_CSV_DIR for local seed data; not used on Vercel).'
+    )
   }
 
   // 12. MRI → Vercel Blob + live ResNet18 (requires BLOB_READ_WRITE_TOKEN + MODEL_API_URL)
