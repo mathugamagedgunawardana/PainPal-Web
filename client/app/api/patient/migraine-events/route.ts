@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url)
-  const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') ?? '100', 10) || 100))
+  const limit = Math.min(500, Math.max(1, parseInt(searchParams.get('limit') ?? '200', 10) || 200))
 
   try {
     const rows = await prisma.migraineEvent.findMany({

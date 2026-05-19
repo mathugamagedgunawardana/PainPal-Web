@@ -1,1 +1,11 @@
+# Vercel serverless (no PyTorch — MRI uses ONNX). Local full stack: pip install -r requirements-ml.txt
+python-dotenv==1.2.1
+python-multipart==0.0.21
 fastapi==0.128.0
+joblib==1.5.2
+numpy==2.3.5
+pandas==2.3.3
+pillow==12.1.0
+scikit-learn==1.7.2
+xgboost==3.1.3
+onnxruntime==1.21.0

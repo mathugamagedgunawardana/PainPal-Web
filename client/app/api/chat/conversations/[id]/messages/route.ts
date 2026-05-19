@@ -136,3 +136,37 @@ export async function POST(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+/** DELETE /api/chat/conversations/[id]/messages – remove all messages in this thread */
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireRole(req, ['ADMIN', 'DOCTOR', 'PATIENT'])
+  if (!auth.authorized) return auth.response!
+
+  const { id: conversationId } = await params
+  if (!conversationId) {
+    return NextResponse.json({ error: 'Conversation ID required' }, { status: 400 })
+  }
+
+  const { conversation, error } = await getConversationAccess(conversationId, auth.user!)
+  if (error) return error
+  if (!conversation) {
+    return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+  }
+
+  try {
+    const result = await prisma.chatMessage.deleteMany({
+      where: { conversationId },
+    })
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { updatedAt: new Date() },
+    })
+    return NextResponse.json({ deleted: result.count })
+  } catch (e) {
+    console.error('DELETE /api/chat/conversations/[id]/messages error:', e)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}

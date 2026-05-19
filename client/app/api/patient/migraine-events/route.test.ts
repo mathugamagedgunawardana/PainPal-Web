@@ -126,7 +126,7 @@ describe('GET /api/patient/migraine-events', () => {
     expect(findManyMock).toHaveBeenCalledWith({
       where: { patientId: 'patient-1' },
       orderBy: { startDatetime: 'desc' },
-      take: 200,
+      take: 500,
     })
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({

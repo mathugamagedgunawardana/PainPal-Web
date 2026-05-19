@@ -1,5 +1,5 @@
-"""Vercel FastAPI entrypoint (see vercel_app.py). Do not use main.py on Vercel."""
+"""Vercel FastAPI entrypoint — full inference via main.py (artifacts from Vercel Blob)."""
 
-from vercel_app import app
+from main import app
 
 __all__ = ["app"]

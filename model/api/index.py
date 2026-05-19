@@ -1,5 +1,5 @@
-"""Legacy path; Vercel uses app.py at project root. Kept for local imports."""
+"""Legacy path; Vercel uses app.py at project root."""
 
-from vercel_app import app
+from main import app
 
 __all__ = ["app"]

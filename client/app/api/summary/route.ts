@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
   })
 
   try {
-    await prisma.migraineEvent.create({
+    const created = await prisma.migraineEvent.create({
       data: {
         patientId: patient.id,
         startDatetime: start,
@@ -142,16 +142,17 @@ export async function POST(req: NextRequest) {
         migraineTypeConfidence: 72,
       },
     })
+
+    const summary = `Saved to your clinic record. Severity ${intensity}/10, duration ${durationH || '—'}h, location ${body.Location ?? '—'}.`
+
+    return NextResponse.json({
+      summary,
+      predicted_migraine_type: migraineType,
+      symptoms_received: detected,
+      event_id: created.id,
+    })
   } catch (e) {
     console.error('POST /api/summary create error:', e)
     return NextResponse.json({ error: 'Failed to save migraine event' }, { status: 500 })
   }
-
-  const summary = `Saved to your clinic record. Severity ${intensity}/10, duration ${durationH || '—'}h, location ${body.Location ?? '—'}.`
-
-  return NextResponse.json({
-    summary,
-    predicted_migraine_type: migraineType,
-    symptoms_received: detected,
-  })
 }

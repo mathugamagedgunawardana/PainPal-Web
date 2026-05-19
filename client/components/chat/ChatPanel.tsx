@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { MessageSquare, Send, X, Loader2 } from 'lucide-react'
+import { MessageSquare, Send, X, Loader2, Trash2 } from 'lucide-react'
 
 export type ChatMessage = {
   id: string
@@ -42,6 +42,7 @@ export function ChatPanel({
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -137,6 +138,35 @@ export function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const clearMessages = async () => {
+    const cid = conversationId ?? (await ensureConversation())
+    if (!cid) return
+    if (
+      !window.confirm(
+        `Clear all messages with ${otherPartyName}? This removes the thread for both of you and cannot be undone.`
+      )
+    ) {
+      return
+    }
+    setClearing(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/chat/conversations/${cid}/messages`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to clear chat')
+      }
+      setMessages([])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to clear chat')
+    } finally {
+      setClearing(false)
+    }
+  }
+
   const sendMessage = async () => {
     const cid = conversationId ?? (await ensureConversation())
     if (!cid || !input.trim()) return
@@ -178,9 +208,25 @@ export function ChatPanel({
             <MessageSquare className="w-5 h-5 text-indigo-600" />
             <span className="font-semibold text-gray-900">Chat with {otherPartyName}</span>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
-            <X className="w-5 h-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={clearMessages}
+              disabled={clearing || loading || !conversationId}
+              aria-label="Clear chat"
+              title="Clear all messages"
+            >
+              {clearing ? (
+                <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
+              ) : (
+                <Trash2 className="w-5 h-5 text-gray-500" />
+              )}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Messages */}

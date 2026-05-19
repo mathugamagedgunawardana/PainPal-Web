@@ -27,3 +27,4 @@ model/**/*.tar.gz
 # Client seed exports (regenerate locally; do not ship to production)
 client/prisma/*_export.csv
 client/prisma/*_export.csv~
+.vercel

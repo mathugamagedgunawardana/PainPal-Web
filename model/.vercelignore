@@ -1,19 +1,22 @@
-# Full ML server — deploy on Render/Railway/VPS, not Vercel
-main.py
+# Local / training only
 requirements-ml.txt
 Dockerfile
 Procfile
-
-# Heavy data and training code
-text/
-image/
 venv/
+.venv/
 .venv_metrics/
 **/__pycache__/
+vercel_app.py
 
-# Artifacts (large binaries)
-*.pkl
-*.pt
-*.pth
-*.joblib
-artifacts/
+# Datasets
+**/Data/
+**/data/
+*.csv
+*.tsv
+
+# Raw weights outside bundled_artifacts/ (run scripts/prepare_vercel_deploy.py first)
+text/xgboost_patient_model.pkl
+text/label_encoder.pkl
+text/artifacts/
+image/resnet_brain_model.pt
+image/resnet_brain_model.onnx

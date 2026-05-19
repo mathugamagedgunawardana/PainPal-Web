@@ -44,8 +44,10 @@ image/.venv/
 *.gz
 artifacts/
 text/artifacts/
+bundled_artifacts/
 
 # Inference weights (deploy via model host / release assets, not git)
 resnet_brain_model.pt
 xgboost_patient_model.pkl
 label_encoder.pkl
+.vercel

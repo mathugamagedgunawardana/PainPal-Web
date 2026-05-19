@@ -52,10 +52,22 @@ from starlette.responses import Response
 from starlette.concurrency import run_in_threadpool
 
 # Pipeline modules live next to run_pipeline.py
-_TEXT_DIR = Path(__file__).resolve().parent / "text"
+_MODEL_DIR = Path(__file__).resolve().parent
+_TEXT_DIR = _MODEL_DIR / "text"
+if str(_MODEL_DIR) not in sys.path:
+    sys.path.insert(0, str(_MODEL_DIR))
 if str(_TEXT_DIR) not in sys.path:
     sys.path.insert(0, str(_TEXT_DIR))
 
+from artifact_store import (  # noqa: E402
+    artifacts_ready,
+    ensure_artifacts,
+    is_vercel_runtime,
+    resolve_image_artifact,
+    resolve_image_path,
+    resolve_text_artifact,
+    resolve_text_path,
+)
 from run_pipeline import run_pipeline  # noqa: E402
 from train_next_attack import run_next_attack_pipeline, predict_next_attack  # noqa: E402
 
@@ -121,15 +133,40 @@ def _pipeline_routes_enabled() -> bool:
 
 
 def _artifact_path(name: str) -> Path:
-    return _TEXT_DIR / "artifacts" / name
+    return resolve_text_artifact(_TEXT_DIR, name)
 
 
 def _model_path(name: str) -> Path:
-    return _TEXT_DIR / name
+    return resolve_text_path(_TEXT_DIR, name)
+
+
+def _use_onnx_mri() -> bool:
+    explicit = os.getenv("MODEL_USE_ONNX", "").strip().lower()
+    if explicit in ("1", "true", "yes"):
+        return True
+    if explicit in ("0", "false", "no"):
+        return False
+    return is_vercel_runtime()
+
+
+def _ensure_runtime_artifacts() -> None:
+    if is_vercel_runtime() or os.getenv("MODEL_ARTIFACTS_JSON", "").strip():
+        ensure_artifacts()
+
+
+def _ensure_serving_loaded() -> None:
+    if "model" not in _serving and "error" not in _serving:
+        load_serving_bundle()
+
+
+def _ensure_mri_loaded() -> None:
+    if "model" not in _mri and "error" not in _mri:
+        load_mri_bundle()
 
 
 def load_serving_bundle() -> None:
     """Load model, label encoder, imputers, feature columns, and optional class-id map."""
+    _ensure_runtime_artifacts()
     model_p = _model_path("xgboost_patient_model.pkl")
     enc_p = _model_path("label_encoder.pkl")
     if not model_p.is_file() or not enc_p.is_file():
@@ -176,7 +213,13 @@ def load_serving_bundle() -> None:
 
 
 def load_mri_bundle() -> None:
-    """Load ResNet18 checkpoint from model/image/ (migraine vs other). Safe if files missing."""
+    """Load MRI model (ONNX on Vercel, PyTorch locally). Safe if files missing."""
+    _ensure_runtime_artifacts()
+
+    if _use_onnx_mri():
+        _load_mri_onnx()
+        return
+
     try:
         import torch
 
@@ -200,8 +243,8 @@ def load_mri_bundle() -> None:
         return
 
     base = str(_IMAGE_DIR.resolve())
-    model_pt = _IMAGE_DIR / "resnet_brain_model.pt"
-    labels_json = _IMAGE_DIR / "artifacts" / "class_names.json"
+    model_pt = resolve_image_path(_IMAGE_DIR, "resnet_brain_model.pt")
+    labels_json = resolve_image_artifact(_IMAGE_DIR, "class_names.json")
     if not model_pt.is_file() or not labels_json.is_file():
         _mri.clear()
         _mri["error"] = (
@@ -231,9 +274,50 @@ def load_mri_bundle() -> None:
     log.info("Loaded MRI ResNet bundle on device %s", device)
 
 
+def _load_mri_onnx() -> None:
+    try:
+        predict_mod = _import_image_module("predict_onnx")
+    except ImportError as exc:
+        _mri.clear()
+        _mri["error"] = f"ONNX MRI stack unavailable ({exc}). pip install onnxruntime"
+        log.warning("ONNX MRI unavailable: %s", exc)
+        return
+
+    onnx_path = resolve_image_path(_IMAGE_DIR, "resnet_brain_model.onnx")
+    labels_json = resolve_image_artifact(_IMAGE_DIR, "class_names.json")
+    cfg_json = resolve_image_artifact(_IMAGE_DIR, "transforms_config.json")
+    if not onnx_path.is_file() or not labels_json.is_file():
+        _mri.clear()
+        _mri["error"] = (
+            f"Missing ONNX MRI weights. Expected {onnx_path} and {labels_json}. "
+            "Run image/export_onnx.py locally and publish artifacts to Vercel Blob."
+        )
+        log.warning("ONNX MRI not loaded: missing %s or %s", onnx_path, labels_json)
+        return
+
+    try:
+        session, class_names, transforms_config = predict_mod.load_onnx_bundle(
+            onnx_path, labels_json, cfg_json
+        )
+    except Exception as exc:
+        _mri.clear()
+        _mri["error"] = f"Failed to load ONNX MRI model: {exc}"
+        log.exception("Failed to load ONNX MRI model")
+        return
+
+    _mri["session"] = session
+    _mri["class_names"] = class_names
+    _mri["transforms_config"] = transforms_config
+    _mri["predict_from_pil"] = predict_mod.predict_from_pil_onnx
+    _mri["backend"] = "onnx"
+    _mri.pop("error", None)
+    log.info("Loaded MRI ONNX bundle (%s classes)", len(class_names))
+
+
 def predict_mri_from_bytes(image_bytes: bytes) -> dict[str, Any]:
     """Run ResNet inference on raw image bytes (PNG/JPEG, ...)."""
-    if "model" not in _mri:
+    _ensure_mri_loaded()
+    if "model" not in _mri and "session" not in _mri:
         raise HTTPException(status_code=503, detail=_mri.get("error", "MRI model not loaded."))
     from PIL import Image
 
@@ -243,14 +327,22 @@ def predict_mri_from_bytes(image_bytes: bytes) -> dict[str, Any]:
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid image file: {exc}") from exc
 
-    pred_label, probs = predict_from_pil(
-        img,
-        _mri["model"],
-        _mri["transform"],
-        _mri["device"],
-        _mri["class_names"],
-        _mri["transforms_config"],
-    )
+    if _mri.get("backend") == "onnx":
+        pred_label, probs = predict_from_pil(
+            img,
+            _mri["session"],
+            _mri["class_names"],
+            _mri["transforms_config"],
+        )
+    else:
+        pred_label, probs = predict_from_pil(
+            img,
+            _mri["model"],
+            _mri["transform"],
+            _mri["device"],
+            _mri["class_names"],
+            _mri["transforms_config"],
+        )
     names = _mri["class_names"]
     conf = max(probs) if probs else None
     log.debug("MRI inference label=%s confidence=%s", pred_label, conf)
@@ -299,6 +391,7 @@ def preprocess_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def predict_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    _ensure_serving_loaded()
     if "model" not in _serving:
         raise HTTPException(status_code=503, detail=_serving.get("error", "Model not loaded."))
 
@@ -342,6 +435,7 @@ def predict_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def predict_next_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    _ensure_serving_loaded()
     bundle = _serving.get("next_attack_bundle")
     if bundle is None:
         raise HTTPException(
@@ -376,14 +470,20 @@ def _skip_health_paths() -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("Startup: loading tabular and MRI bundles (text_dir=%s)", _TEXT_DIR)
-    load_serving_bundle()
-    load_mri_bundle()
-    log.info(
-        "Startup complete: xgb_ok=%s mri_ok=%s",
-        "model" in _serving,
-        "model" in _mri,
-    )
+    if is_vercel_runtime():
+        log.info(
+            "Vercel runtime: lazy-loading models on first request (artifacts_ready=%s)",
+            artifacts_ready(),
+        )
+    else:
+        log.info("Startup: loading tabular and MRI bundles (text_dir=%s)", _TEXT_DIR)
+        load_serving_bundle()
+        load_mri_bundle()
+        log.info(
+            "Startup complete: xgb_ok=%s mri_ok=%s",
+            "model" in _serving,
+            "model" in _mri or "session" in _mri,
+        )
     yield
     log.info("Shutdown.")
 
@@ -494,14 +594,20 @@ def custom_redoc_docs():
 @app.get("/health")
 def health():
     ok = "model" in _serving
+    mri_ok = "model" in _mri or "session" in _mri
     return {
         "ok": ok,
+        "runtime": "vercel" if is_vercel_runtime() else "standard",
         "artifacts_dir": str(_TEXT_DIR),
+        "remote_artifacts_ready": artifacts_ready(),
         "has_model_class_ids": _artifact_path("model_class_ids.joblib").is_file(),
         "has_next_attack_bundle": _artifact_path("next_attack_bundle.joblib").is_file(),
         "error": _serving.get("error"),
-        "has_mri_model": "model" in _mri,
+        "has_mri_model": mri_ok,
+        "mri_backend": _mri.get("backend"),
         "mri_error": _mri.get("error"),
+        "onnx_mri_configured": resolve_image_path(_IMAGE_DIR, "resnet_brain_model.onnx").is_file()
+        or bool(os.getenv("MODEL_ARTIFACT_MRI_ONNX_URL", "").strip()),
     }
 
 

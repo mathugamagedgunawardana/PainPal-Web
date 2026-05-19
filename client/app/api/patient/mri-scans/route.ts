@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
     const scans = rows.map((row) => ({
       id: row.id,
       imagePath: '',
+      imageUrl: row.blobPathname ? `/api/patient/mri-scans/${row.id}/image` : null,
       prediction: row.prediction,
       predictedLabel: row.prediction,
       confidence: row.confidence,

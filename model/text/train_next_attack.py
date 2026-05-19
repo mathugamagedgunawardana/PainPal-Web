@@ -30,6 +30,11 @@ SYNTHETIC_DATA_PATH = "migraine_data_synthetic.csv"
 DATA_PATH = "migraine_data.csv"
 NEXT_BUNDLE_PATH = os.path.join("artifacts", "next_attack_bundle.joblib")
 
+
+def _n_estimators(env_name: str, default: int) -> int:
+    raw = os.getenv(env_name, "").strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else default
+
 TYPE_ONE_HOT_COLS = [
     "Migraine_without_aura",
     "Typical_aura_migraine",
@@ -332,11 +337,15 @@ def run_next_attack_pipeline(data_path: str | None = None, data_dir: str | None 
     models_bin: dict[str, Any] = {}
     metrics: dict[str, Any] = {"regression_mae": {}, "binary_accuracy": {}}
 
+    n_reg = _n_estimators("NEXT_ATTACK_N_EST_REG", 300)
+    n_bin = _n_estimators("NEXT_ATTACK_N_EST_BIN", 300)
+    n_type = _n_estimators("NEXT_ATTACK_N_EST_TYPE", 400)
+
     for col in REGRESSION_TARGETS:
         target_col = f"_next_{col}"
         if target_col not in y_train.columns:
             continue
-        reg = RandomForestRegressor(n_estimators=300, random_state=42)
+        reg = RandomForestRegressor(n_estimators=n_reg, random_state=42)
         reg.fit(X_train, y_train[target_col].astype(float))
         pred = reg.predict(X_test)
         metrics["regression_mae"][col] = float(
@@ -348,7 +357,7 @@ def run_next_attack_pipeline(data_path: str | None = None, data_dir: str | None 
         target_col = f"_next_{col}"
         if target_col not in y_train.columns:
             continue
-        clf = RandomForestClassifier(n_estimators=300, random_state=42, class_weight="balanced")
+        clf = RandomForestClassifier(n_estimators=n_bin, random_state=42, class_weight="balanced")
         clf.fit(X_train, y_train[target_col].astype(int))
         pred = clf.predict(X_test)
         metrics["binary_accuracy"][col] = float(
@@ -356,7 +365,7 @@ def run_next_attack_pipeline(data_path: str | None = None, data_dir: str | None 
         )
         models_bin[col] = clf
 
-    type_clf = RandomForestClassifier(n_estimators=400, random_state=42, class_weight="balanced")
+    type_clf = RandomForestClassifier(n_estimators=n_type, random_state=42, class_weight="balanced")
     type_clf.fit(X_train, y_train["_next_type"].astype(str))
     type_pred = type_clf.predict(X_test)
     metrics["next_type_accuracy"] = float(accuracy_score(y_test["_next_type"].astype(str), type_pred))
@@ -445,3 +454,7 @@ def predict_next_attack(records: list[dict[str, Any]], bundle: dict[str, Any]) -
         out["next_attack"]["symptoms"][col] = symptom_obj
 
     return out
+
+
+if __name__ == "__main__":
+    print(run_next_attack_pipeline())

@@ -34,12 +34,7 @@ export async function persistMriScanWithModel(
   input: PersistMriScanInput,
 ): Promise<PersistMriScanResult> {
   const { patientId, imageBytes, originalFileName, mimeType, blobKeyPrefix = 'mri' } = input
-
-  const modelResult = await callMriPredictApi(
-    imageBytes,
-    originalFileName,
-    mimeType ?? 'application/octet-stream',
-  )
+  const contentType = mimeType ?? 'application/octet-stream'
 
   let blobUrl: string | undefined
   let blobPathname: string | undefined
@@ -50,12 +45,14 @@ export async function persistMriScanWithModel(
     const uploaded = await uploadToBlob({
       key,
       data: imageBytes,
-      contentType: mimeType ?? 'application/octet-stream',
+      contentType,
       access: 'private',
     })
     blobUrl = uploaded.url
     blobPathname = uploaded.pathname
   }
+
+  const modelResult = await callMriPredictApi(imageBytes, originalFileName, contentType)
 
   const row = await prisma.patientMriScan.create({
     data: {
