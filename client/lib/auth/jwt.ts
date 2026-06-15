@@ -5,7 +5,8 @@ import { cookies } from 'next/headers';
 const JWT_EXPIRES_IN = '1d';
 
 function jwtSecretBytes(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
+  const secret = process.env.JWT_SECRET?.trim();
+  const fallback = 'your-secret-key-change-in-production';
   if (process.env.NODE_ENV === 'production') {
     if (!secret || secret.length < 32) {
       throw new Error(
@@ -14,7 +15,7 @@ function jwtSecretBytes(): Uint8Array {
     }
     return new TextEncoder().encode(secret);
   }
-  return new TextEncoder().encode(secret ?? 'your-secret-key-change-in-production');
+  return new TextEncoder().encode(secret && secret.length > 0 ? secret : fallback);
 }
 
 export interface JWTPayload {
