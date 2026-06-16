@@ -29,6 +29,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   Users,
+  UserPlus,
 } from 'lucide-react'
 import { EpisodeHistoryTab } from '@/components/doctor/EpisodeHistoryTab'
 import { MedicationsTab, type MedicationGroupRow } from '@/components/doctor/MedicationsTab'
@@ -44,6 +45,7 @@ import { FloatingChatIcon } from '@/components/chat/FloatingChatIcon'
 import PatientAnalyticsPredictionPage from '@/components/doctor/PatientAnalyticsPredictionPage'
 import { DoctorPatientAiSummaryCard } from '@/components/doctor/DoctorPatientAiSummaryCard'
 import { DoctorPatientMriPredictionCard } from '@/components/doctor/DoctorPatientMriPredictionCard'
+import { AddPatientDialog } from '@/components/doctor/AddPatientDialog'
 import { cn } from '@/lib/utils'
 
 const DOCTOR_PATIENTS_LIST_COLLAPSED_KEY = 'doctor-patients-list-collapsed'
@@ -105,6 +107,7 @@ export default function PatientsPage() {
   const [patientListCollapsed, setPatientListCollapsed] = useState(false)
   const [modelSyncRunning, setModelSyncRunning] = useState(false)
   const [modelSyncPending, setModelSyncPending] = useState(0)
+  const [addPatientOpen, setAddPatientOpen] = useState(false)
 
   useEffect(() => {
     try {
@@ -249,6 +252,16 @@ export default function PatientsPage() {
     fetchPatientDetail(id)
   }, [searchParams, patients, selectedPatient?.id, fetchPatientDetail])
 
+  const handlePatientAdded = useCallback((patient: PatientListItem) => {
+    setPatients((prev) => {
+      const exists = prev.some((p) => p.id === patient.id)
+      if (exists) return prev.map((p) => (p.id === patient.id ? { ...p, ...patient } : p))
+      return [patient, ...prev]
+    })
+    setSelectedPatient(patient)
+    fetchPatientDetail(patient.id)
+  }, [fetchPatientDetail])
+
   const handleSelectPatient = (patient: PatientListItem) => {
     if (selectedPatient?.id === patient.id) return
     setSelectedPatient(patient)
@@ -290,7 +303,15 @@ export default function PatientsPage() {
                 className="w-full pl-8 pr-1 py-1 rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
             </div>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap items-center">
+              <Button
+                type="button"
+                onClick={() => setAddPatientOpen(true)}
+                className="rounded-xl text-xs sm:text-sm gap-1.5 bg-purple-600 hover:bg-purple-700"
+              >
+                <UserPlus className="w-3 h-3 sm:w-4 sm:h-4" />
+                Add Patient
+              </Button>
               {modelSyncRunning && (
                 <Badge className="bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs sm:text-sm">
                   <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 mr-1 animate-spin" />
@@ -739,6 +760,12 @@ export default function PatientsPage() {
         currentUserRole="DOCTOR"
         open={chatOpen && !!selectedPatient}
         onClose={() => setChatOpen(false)}
+      />
+
+      <AddPatientDialog
+        open={addPatientOpen}
+        onOpenChange={setAddPatientOpen}
+        onPatientAdded={handlePatientAdded}
       />
     </div>
     </div>

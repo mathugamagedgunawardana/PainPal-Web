@@ -1,29 +1,29 @@
 {
-  "generatedAt": "2026-05-18T19:33:45.681200+00:00",
+  "generatedAt": "2026-06-16T11:19:11.312994+00:00",
   "source": "run_pipeline.py + sysmptoms.txt",
-  "selectedSampleIndex": 742,
+  "selectedSampleIndex": 662,
   "predictedType": "Hemiplegic migraine",
-  "confidence": 78.5,
+  "confidence": 78.0,
   "summary": "Migraine with one-side paralysis",
   "keySymptoms": [
-    "Weakness",
     "Throb",
-    "Photo"
+    "Photo",
+    "Phono"
   ],
   "predictions": [
     {
       "type": "Hemiplegic migraine",
-      "probability": 78.5,
+      "probability": 78.0,
       "summary": "Migraine with one-side paralysis",
       "keySymptoms": [
-        "Weakness",
         "Throb",
-        "Photo"
+        "Photo",
+        "Phono"
       ],
       "impact": {
-        "pain": 67.5,
+        "pain": 62.2,
         "aura": 46.9,
-        "neuro": 39.9,
+        "neuro": 32.0,
         "frequency": 26.0,
         "hormonal": 0.0,
         "vestibular": 9.8,
@@ -32,15 +32,15 @@
     },
     {
       "type": "Migraine with aura",
-      "probability": 3.2,
+      "probability": 3.4,
       "summary": "Migraine with classic aura",
       "keySymptoms": [
         "Throb",
         "Photo",
-        "Nausea"
+        "Phono"
       ],
       "impact": {
-        "pain": 77.5,
+        "pain": 71.4,
         "aura": 51.2,
         "neuro": 9.9,
         "frequency": 26.0,
@@ -50,35 +50,16 @@
       }
     },
     {
-      "type": "Status migrainosus",
-      "probability": 3.1,
-      "summary": "Severe migraine lasting >72h",
-      "keySymptoms": [
-        "Throb",
-        "Nausea",
-        "Photo"
-      ],
-      "impact": {
-        "pain": 90.0,
-        "aura": 9.9,
-        "neuro": 6.1,
-        "frequency": 61.0,
-        "hormonal": 0.0,
-        "vestibular": 9.8,
-        "vision": 35.5
-      }
-    },
-    {
       "type": "Migraine with brainstem aura",
-      "probability": 3.0,
+      "probability": 3.2,
       "summary": "Brainstem (basilar-type) aura",
       "keySymptoms": [
         "Throb",
         "Photo",
-        "Nausea"
+        "Phono"
       ],
       "impact": {
-        "pain": 67.5,
+        "pain": 62.2,
         "aura": 38.1,
         "neuro": 31.1,
         "frequency": 26.0,
@@ -88,54 +69,35 @@
       }
     },
     {
-      "type": "Retinal migraine",
-      "probability": 2.5,
-      "summary": "Vision loss in one eye",
-      "keySymptoms": [
-        "MonoVisionLoss",
-        "Throb",
-        "Photo"
-      ],
-      "impact": {
-        "pain": 57.5,
-        "aura": 13.8,
-        "neuro": 2.4,
-        "frequency": 26.0,
-        "hormonal": 0.0,
-        "vestibular": 4.9,
-        "vision": 63.8
-      }
-    },
-    {
-      "type": "Chronic migraine",
-      "probability": 2.4,
-      "summary": "\u226515 headache days per month",
+      "type": "Status migrainosus",
+      "probability": 3.2,
+      "summary": "Severe migraine lasting >72h",
       "keySymptoms": [
         "Throb",
-        "Nausea",
-        "Photo"
+        "Photo",
+        "Phono"
       ],
       "impact": {
-        "pain": 82.5,
-        "aura": 0.0,
-        "neuro": 2.4,
-        "frequency": 26.0,
+        "pain": 82.1,
+        "aura": 9.9,
+        "neuro": 6.1,
+        "frequency": 61.0,
         "hormonal": 0.0,
-        "vestibular": 4.9,
-        "vision": 26.7
+        "vestibular": 9.8,
+        "vision": 35.5
       }
     },
     {
       "type": "Menstrual migraine",
-      "probability": 2.4,
+      "probability": 2.5,
       "summary": "Linked to menstrual cycle",
       "keySymptoms": [
         "Throb",
-        "Nausea",
-        "Photo"
+        "Photo",
+        "Phono"
       ],
       "impact": {
-        "pain": 72.5,
+        "pain": 66.4,
         "aura": 0.0,
         "neuro": 2.4,
         "frequency": 26.0,
@@ -145,16 +107,54 @@
       }
     },
     {
+      "type": "Retinal migraine",
+      "probability": 2.3,
+      "summary": "Vision loss in one eye",
+      "keySymptoms": [
+        "Throb",
+        "Photo",
+        "Phono"
+      ],
+      "impact": {
+        "pain": 53.1,
+        "aura": 13.8,
+        "neuro": 2.4,
+        "frequency": 26.0,
+        "hormonal": 0.0,
+        "vestibular": 4.9,
+        "vision": 53.2
+      }
+    },
+    {
+      "type": "Chronic migraine",
+      "probability": 2.3,
+      "summary": "\u226515 headache days per month",
+      "keySymptoms": [
+        "Throb",
+        "Photo",
+        "Phono"
+      ],
+      "impact": {
+        "pain": 75.5,
+        "aura": 0.0,
+        "neuro": 2.4,
+        "frequency": 26.0,
+        "hormonal": 0.0,
+        "vestibular": 4.9,
+        "vision": 26.7
+      }
+    },
+    {
       "type": "Migraine without aura",
       "probability": 2.2,
       "summary": "Common migraine without aura",
       "keySymptoms": [
         "Throb",
         "Photo",
-        "Nausea"
+        "Phono"
       ],
       "impact": {
-        "pain": 77.5,
+        "pain": 71.4,
         "aura": 0.0,
         "neuro": 2.4,
         "frequency": 26.0,
@@ -165,15 +165,15 @@
     },
     {
       "type": "Vestibular migraine",
-      "probability": 1.5,
+      "probability": 1.4,
       "summary": "Vertigo/dizziness dominant",
       "keySymptoms": [
-        "Nausea",
         "Throb",
-        "Vertigo"
+        "Vertigo",
+        "Photo"
       ],
       "impact": {
-        "pain": 37.5,
+        "pain": 32.2,
         "aura": 5.5,
         "neuro": 16.2,
         "frequency": 26.0,
@@ -184,15 +184,15 @@
     },
     {
       "type": "Probable migraine",
-      "probability": 1.2,
+      "probability": 1.4,
       "summary": "Partial/atypical migraine",
       "keySymptoms": [
         "Throb",
-        "Nausea",
-        "Photo"
+        "Photo",
+        "Phono"
       ],
       "impact": {
-        "pain": 35.0,
+        "pain": 32.4,
         "aura": 7.2,
         "neuro": 3.7,
         "frequency": 26.0,

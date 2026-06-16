@@ -128,11 +128,43 @@ function formatDate(d: Date): string {
   return x.toISOString().slice(0, 10)
 }
 
+/** POST /api/patients – ADMIN: generic CRUD; DOCTOR: create patient and link to care list. */
 export async function POST(req: NextRequest) {
-  const auth = await requireRole(req, ['ADMIN'])
+  const auth = await requireRole(req, ['ADMIN', 'DOCTOR'])
   if (!auth.authorized) return auth.response!
-  const { baseCrudHandler } = await import('../baseRoute/baseCrud')
-  return baseCrudHandler('patientProfile', req)
+
+  if (auth.user?.role === 'ADMIN') {
+    const { baseCrudHandler } = await import('../baseRoute/baseCrud')
+    return baseCrudHandler('patientProfile', req)
+  }
+
+  try {
+    const body = (await req.json()) as Record<string, unknown>
+    const { createPatientForDoctor } = await import('@/lib/doctor/createPatientForDoctor')
+    const result = await createPatientForDoctor(auth.user!, {
+      name: String(body.name ?? ''),
+      email: String(body.email ?? ''),
+      password: String(body.password ?? ''),
+      dob: String(body.dob ?? body.dateOfBirth ?? ''),
+      gender: body.gender != null ? String(body.gender) : null,
+      phone: body.phone != null ? String(body.phone) : null,
+      address: body.address != null ? String(body.address) : null,
+      condition: body.condition != null ? String(body.condition) : null,
+    })
+
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error, message: result.message },
+        { status: result.status }
+      )
+    }
+
+    return NextResponse.json(result.patient, { status: 201 })
+  } catch (error) {
+    console.error('POST /api/patients error:', error)
+    const message = error instanceof Error ? error.message : 'Internal server error'
+    return NextResponse.json({ error: 'Internal server error', message }, { status: 500 })
+  }
 }
 
 export async function PUT(req: NextRequest) {
