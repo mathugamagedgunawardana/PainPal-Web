@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
-Full classification pipeline: Steps 1–9.
-Runs load → prepare → split → train → predict → evaluate → save.
+Full classification pipeline: Steps 0–9.
+
+Data stages (default single-CSV flow):
+  Step 0:   prepare_pipeline_csv — normalize raw legacy CSV to pipeline format
+  Step 0.5: expand_migraine_ctgan — CTGAN data augmentation (balanced per subtype)
+  Steps 1–9: load → feature prep → split → train → evaluate → save
+
 Supports:
-  - Single CSV: migraine_data.csv
+  - Single CSV: migraine_data.csv / migraine_data_synthetic.csv
   - Data folder: all patient_*_migraine_attacks.csv combined (train on each person's attack data).
 """
 
 import os
+import sys
 import glob
 import json
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import xgboost as xgb
@@ -28,8 +35,22 @@ from data_loader import (
 )
 
 # Config
+_TEXT_DIR = Path(__file__).resolve().parent
+_TEXT_DATA_DIR = _TEXT_DIR.parent / "text_data"
+if str(_TEXT_DATA_DIR) not in sys.path:
+    sys.path.insert(0, str(_TEXT_DATA_DIR))
+
+from prepare_pipeline_csv import convert_migraine_data  # noqa: E402
+from expand_migraine_ctgan import expand_with_ctgan  # noqa: E402
+
+DEFAULT_RAW_DATA_PATH = str(_TEXT_DATA_DIR / "migraine_data.csv")
+PREPARED_DATA_PATH = "migraine_data_prepared.csv"
+CTGAN_LEGACY_PATH = "migraine_data_ctgan_raw.csv"
 SYNTHETIC_DATA_PATH = "migraine_data_synthetic.csv"
 DATA_PATH = "migraine_data.csv"
+# CTGAN augmentation defaults (per-class rows in the augmented training set)
+CTGAN_PER_CLASS = 2000
+CTGAN_EPOCHS = 150
 DATA_DIR = "Data"  # folder with patient_*_migraine_attacks.csv
 LABELED_DIR = os.path.join("Data", "traningData_labeled")
 CATEGORICAL_COLS = ["Location", "Character", "DPF"]
@@ -292,6 +313,83 @@ def _export_patient_analytics_json(
     print(f"  Exported analytics JSON -> {ANALYTICS_EXPORT_PATH}")
 
 
+def step0_prepare_pipeline_csv(raw_path: str, output_path: str) -> str:
+    """Step 0: Convert raw/legacy migraine CSV into pipeline-ready format."""
+    print("\n" + "=" * 60)
+    print("Step 0: Prepare pipeline CSV (prepare_pipeline_csv)")
+    print("=" * 60)
+    if not os.path.isfile(raw_path):
+        raise FileNotFoundError(f"Raw data file not found: {raw_path}")
+    df = pd.read_csv(raw_path)
+    converted = convert_migraine_data(df)
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    converted.to_csv(output_path, index=False)
+    print(f"  Rows: {len(converted)}, columns: {len(converted.columns)}")
+    print(f"  Wrote prepared CSV -> {output_path}")
+    return output_path
+
+
+def step0_augment_with_ctgan(
+    input_path: str,
+    legacy_output_path: str,
+    training_output_path: str,
+    per_class: int = CTGAN_PER_CLASS,
+    epochs: int = CTGAN_EPOCHS,
+    seed: int = RANDOM_STATE,
+) -> str:
+    """Step 0.5: CTGAN data augmentation, then convert augmented rows for training."""
+    print("\n" + "=" * 60)
+    print("Step 0.5: CTGAN data augmentation (expand_migraine_ctgan)")
+    print("=" * 60)
+    if not os.path.isfile(input_path):
+        raise FileNotFoundError(f"CTGAN input file not found: {input_path}")
+
+    expand_with_ctgan(
+        input_path=Path(input_path),
+        output_path=Path(legacy_output_path),
+        per_class=per_class,
+        epochs=epochs,
+        seed=seed,
+    )
+
+    df = pd.read_csv(legacy_output_path)
+    converted = convert_migraine_data(df)
+    converted.to_csv(training_output_path, index=False)
+    print(f"  Prepared augmented training CSV -> {training_output_path}")
+    print(f"  Rows: {len(converted)}, columns: {len(converted.columns)}")
+    return training_output_path
+
+
+def _run_data_stages(
+    raw_path: str | None = None,
+    *,
+    prepare_data: bool = True,
+    augment_data: bool = True,
+    ctgan_per_class: int = CTGAN_PER_CLASS,
+    ctgan_epochs: int = CTGAN_EPOCHS,
+) -> str:
+    """Run Step 0 and/or Step 0.5; return the CSV path to use for training."""
+    raw = raw_path or DEFAULT_RAW_DATA_PATH
+    prepared_path = PREPARED_DATA_PATH
+    ctgan_input = raw
+
+    if prepare_data:
+        step0_prepare_pipeline_csv(raw, prepared_path)
+        ctgan_input = prepared_path
+
+    if augment_data:
+        return step0_augment_with_ctgan(
+            ctgan_input,
+            CTGAN_LEGACY_PATH,
+            SYNTHETIC_DATA_PATH,
+            per_class=ctgan_per_class,
+            epochs=ctgan_epochs,
+            seed=RANDOM_STATE,
+        )
+
+    return prepared_path if prepare_data else raw
+
+
 def step1_load_data(path=None, data_dir=None):
     """Step 1: Load the dataset from a single CSV or from Data folder (all patient attack files)."""
     print("\n" + "=" * 60)
@@ -510,19 +608,47 @@ def step9_save(model, target_encoder, feature_names, num_imputer=None, cat_imput
     )
 
 
-def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_PATIENT):
+def run_pipeline(
+    data_path=None,
+    data_dir=None,
+    stratify_by_patient=STRATIFY_BY_PATIENT,
+    *,
+    prepare_data: bool | None = None,
+    augment_data: bool | None = None,
+    raw_data_path: str | None = None,
+    ctgan_per_class: int = CTGAN_PER_CLASS,
+    ctgan_epochs: int = CTGAN_EPOCHS,
+):
     """
-    Run the full 9-step pipeline.
+    Run the full pipeline (Steps 0–9 when using default single-CSV flow).
 
     Args:
         data_path: Single CSV path (e.g. migraine_data.csv). Ignored if data_dir is set.
         data_dir: Folder with patient_*_migraine_attacks.csv; all are loaded and combined.
         stratify_by_patient: If True and data from data_dir, split by patient (test = unseen patients).
+        prepare_data: Run prepare_pipeline_csv on raw data (default True for default CSV flow).
+        augment_data: Run CTGAN augmentation (default True for default CSV flow).
+        raw_data_path: Source CSV for Steps 0–0.5 (default: model/text_data/migraine_data.csv).
+        ctgan_per_class: Target rows per migraine subtype after CTGAN augmentation.
+        ctgan_epochs: CTGAN training epochs.
     """
     os.makedirs("artifacts", exist_ok=True)
 
-    # Default to synthetic CSV if present, else fallback to migraine_data.csv.
-    if data_dir is None and data_path is None:
+    use_default_csv_flow = data_dir is None and data_path is None
+    if prepare_data is None:
+        prepare_data = use_default_csv_flow
+    if augment_data is None:
+        augment_data = use_default_csv_flow
+
+    if use_default_csv_flow and (prepare_data or augment_data):
+        data_path = _run_data_stages(
+            raw_data_path,
+            prepare_data=prepare_data,
+            augment_data=augment_data,
+            ctgan_per_class=ctgan_per_class,
+            ctgan_epochs=ctgan_epochs,
+        )
+    elif data_dir is None and data_path is None:
         data_path = SYNTHETIC_DATA_PATH if os.path.isfile(SYNTHETIC_DATA_PATH) else DATA_PATH
 
     df = step1_load_data(path=data_path or DATA_PATH, data_dir=data_dir)
@@ -570,15 +696,39 @@ def run_pipeline(data_path=None, data_dir=None, stratify_by_patient=STRATIFY_BY_
 
 
 if __name__ == "__main__":
-    import sys
-    # If a path is passed, use it; otherwise use synthetic CSV when available.
-    if len(sys.argv) > 1:
-        arg = sys.argv[1]
-        if os.path.isdir(arg):
-            run_pipeline(data_dir=arg)
-        elif os.path.isfile(arg):
-            run_pipeline(data_path=arg)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run migraine text classification pipeline (Steps 0–9)")
+    parser.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="CSV file or Data folder (optional; default runs prepare + CTGAN + train)",
+    )
+    parser.add_argument("--skip-prep", action="store_true", help="Skip Step 0 (prepare_pipeline_csv)")
+    parser.add_argument("--skip-ctgan", action="store_true", help="Skip Step 0.5 (CTGAN augmentation)")
+    parser.add_argument("--raw-data", default=None, help="Raw source CSV for Steps 0–0.5")
+    parser.add_argument("--per-class", type=int, default=CTGAN_PER_CLASS, help="CTGAN rows per subtype")
+    parser.add_argument("--ctgan-epochs", type=int, default=CTGAN_EPOCHS, help="CTGAN training epochs")
+    parser.add_argument("--no-stratify-patient", action="store_true", help="Disable patient-level split")
+    args = parser.parse_args()
+
+    pipeline_kwargs = {
+        "prepare_data": not args.skip_prep,
+        "augment_data": not args.skip_ctgan,
+        "raw_data_path": args.raw_data,
+        "ctgan_per_class": args.per_class,
+        "ctgan_epochs": args.ctgan_epochs,
+        "stratify_by_patient": not args.no_stratify_patient,
+    }
+
+    if args.path:
+        if os.path.isdir(args.path):
+            run_pipeline(data_dir=args.path, prepare_data=False, augment_data=False, stratify_by_patient=pipeline_kwargs["stratify_by_patient"])
+        elif os.path.isfile(args.path):
+            run_pipeline(data_path=args.path, prepare_data=False, augment_data=False, stratify_by_patient=pipeline_kwargs["stratify_by_patient"])
         else:
-            run_pipeline()
+            print(f"Path not found: {args.path!r}; using default data flow.")
+            run_pipeline(**pipeline_kwargs)
     else:
-        run_pipeline()
+        run_pipeline(**pipeline_kwargs)
