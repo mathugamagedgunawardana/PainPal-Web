@@ -15,6 +15,7 @@ COPIES: list[tuple[Path, Path]] = [
     (MODEL_ROOT / "text/artifacts/feature_columns.joblib", BUNDLE / "text/artifacts/feature_columns.joblib"),
     (MODEL_ROOT / "text/artifacts/num_imputer.joblib", BUNDLE / "text/artifacts/num_imputer.joblib"),
     (MODEL_ROOT / "text/artifacts/model_class_ids.joblib", BUNDLE / "text/artifacts/model_class_ids.joblib"),
+    (MODEL_ROOT / "text/artifacts/model_metrics.json", BUNDLE / "text/artifacts/model_metrics.json"),
     (MODEL_ROOT / "text/artifacts/next_attack_bundle.joblib", BUNDLE / "text/artifacts/next_attack_bundle.joblib"),
     (MODEL_ROOT / "image/artifacts/class_names.json", BUNDLE / "image/artifacts/class_names.json"),
     (MODEL_ROOT / "image/artifacts/transforms_config.json", BUNDLE / "image/artifacts/transforms_config.json"),

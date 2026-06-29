@@ -70,6 +70,7 @@ from artifact_store import (  # noqa: E402
 )
 from run_pipeline import run_pipeline  # noqa: E402
 from train_next_attack import run_next_attack_pipeline, predict_next_attack  # noqa: E402
+from feature_engineering import apply_engineered_features  # noqa: E402
 
 _IMAGE_DIR = Path(__file__).resolve().parent / "image"
 # Append (not insert) so `run_pipeline` resolves to model/text/, not model/image/run_pipeline.py
@@ -357,12 +358,7 @@ def predict_mri_from_bytes(image_bytes: bytes) -> dict[str, Any]:
 
 def preprocess_features(df: pd.DataFrame) -> pd.DataFrame:
     """Match predictModel / run_pipeline inference-time transforms."""
-    out = df.copy()
-    if "Intensity" in out.columns and "Frequency" in out.columns:
-        out["Intensity_x_Freq"] = out["Intensity"] * out["Frequency"]
-    aura_cols = [c for c in ["Visual", "Sensory", "Dysphasia"] if c in out.columns]
-    if aura_cols:
-        out["has_aura"] = (out[aura_cols].sum(axis=1) > 0).astype(int)
+    out = apply_engineered_features(df.copy(), symptoms_path=_TEXT_DIR / "sysmptoms.txt")
 
     numeric_cols = out.select_dtypes(include=[np.number]).columns.tolist()
     categorical_cols = list(out.select_dtypes(include=["object", "category"]).columns)

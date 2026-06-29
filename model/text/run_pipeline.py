@@ -4,7 +4,7 @@ Full classification pipeline: Steps 0–9.
 
 Data stages (default single-CSV flow):
   Step 0:   prepare_pipeline_csv — normalize raw legacy CSV to pipeline format
-  Step 0.5: expand_migraine_ctgan — CTGAN data augmentation (balanced per subtype)
+  Step 0.5: generate_synthetic_migraine_data — profile-based practical augmentation
   Steps 1–9: load → feature prep → split → train → evaluate → save
 
 Supports:
@@ -22,11 +22,12 @@ import numpy as np
 import xgboost as xgb
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score, precision_recall_fscore_support
 from sklearn.impute import SimpleImputer
 from sklearn.utils.class_weight import compute_class_weight
 
 from save_model import save_artifacts
+from feature_engineering import apply_engineered_features
 from data_loader import (
     load_data_from_data_folder,
     load_data_from_labeled_folder,
@@ -41,16 +42,27 @@ if str(_TEXT_DATA_DIR) not in sys.path:
     sys.path.insert(0, str(_TEXT_DATA_DIR))
 
 from prepare_pipeline_csv import convert_migraine_data  # noqa: E402
-from expand_migraine_ctgan import expand_with_ctgan  # noqa: E402
+from generate_synthetic_migraine_data import build_training_dataset  # noqa: E402
 
-DEFAULT_RAW_DATA_PATH = str(_TEXT_DATA_DIR / "migraine_data.csv")
+DEFAULT_RAW_DATA_PATH = str(_TEXT_DATA_DIR / "traning_data" / "migraine_data.csv")
 PREPARED_DATA_PATH = "migraine_data_prepared.csv"
-CTGAN_LEGACY_PATH = "migraine_data_ctgan_raw.csv"
-SYNTHETIC_DATA_PATH = "migraine_data_synthetic.csv"
-DATA_PATH = "migraine_data.csv"
-# CTGAN augmentation defaults (per-class rows in the augmented training set)
-CTGAN_PER_CLASS = 2000
-CTGAN_EPOCHS = 150
+TRAINING_DATA_PATH = "migraine_data_training.csv"
+DATA_PATH = "migraine_data_training.csv"
+# Profile-based augmentation: target rows per migraine subtype in training set
+AUGMENT_PER_CLASS = 400
+WEAK_CLASS_EXTRA_ROWS = 250
+WEAK_CLASS_REAL_THRESHOLD = 50
+WEAK_RECALL_CLASSES = {
+    "Migraine_without_aura",
+    "Brainstem_aura_migraine",
+    "Probable_migraine",
+}
+AUGMENT_BOOST_CLASSES = WEAK_RECALL_CLASSES | {"Typical_aura_migraine", "Hemiplegic_migraine"}
+WEAK_CLASS_WEIGHT_MULTIPLIER = 2.2
+DEPLOY_MIN_ACCURACY = 0.75
+DEPLOY_MIN_MACRO_F1 = 0.75
+DEPLOY_MIN_CLASS_RECALL = 0.65
+METRICS_EXPORT_PATH = os.path.join("artifacts", "model_metrics.json")
 DATA_DIR = "Data"  # folder with patient_*_migraine_attacks.csv
 LABELED_DIR = os.path.join("Data", "traningData_labeled")
 CATEGORICAL_COLS = ["Location", "Character", "DPF"]
@@ -131,6 +143,15 @@ def _safe_pct(value) -> float:
         return 0.0
 
 
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        if pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
 def _load_symptom_profiles(path: str) -> dict:
     """Parse sysmptoms.txt markdown table into canonical profile dict."""
     if not os.path.isfile(path):
@@ -157,21 +178,56 @@ def _load_symptom_profiles(path: str) -> dict:
 
 def _extract_patient_signal(sample_row: pd.Series) -> dict:
     """Map dataset columns to symptom signal strengths (0..100)."""
+    duration = _safe_float(sample_row.get("Duration", 0))
+    duration_over_72h = duration >= 3 or duration >= 72
+    weakness = max(
+        _safe_float(sample_row.get("Paresthesia", 0)),
+        _safe_float(sample_row.get("Ataxia", 0)),
+        _safe_float(sample_row.get("Conscience", 0)),
+    )
     return {
-        "Throb": 100.0 if float(sample_row.get("Character", 0)) == 1 else 40.0,
-        "Nausea": float(sample_row.get("Nausea", 0)) * 100.0,
-        "Photo": float(sample_row.get("Photophobia", 0)) * 100.0,
-        "Phono": float(sample_row.get("Phonophobia", 0)) * 100.0,
-        "VisualAura": min(100.0, float(sample_row.get("Visual", 0)) * 50.0),
-        "SensoryAura": min(100.0, float(sample_row.get("Sensory", 0)) * 50.0),
-        "Speech": min(100.0, float(sample_row.get("Dysphasia", 0)) * 100.0),
-        "Weakness": min(100.0, float(sample_row.get("Defect", 0)) * 100.0),
-        "Vertigo": float(sample_row.get("Vertigo", 0)) * 100.0,
-        "Tinnitus": float(sample_row.get("Tinnitus", 0)) * 100.0,
-        "MonoVisionLoss": float(sample_row.get("Defect", 0)) * 100.0,
-        ">72h": 100.0 if float(sample_row.get("Duration", 0)) >= 72 else 0.0,
-        "Hormonal": 0.0,
+        "Throb": 100.0 if _safe_float(sample_row.get("Character", 0)) == 1 else 40.0,
+        "Nausea": _safe_float(sample_row.get("Nausea", 0)) * 100.0,
+        "Photo": _safe_float(sample_row.get("Photophobia", 0)) * 100.0,
+        "Phono": _safe_float(sample_row.get("Phonophobia", 0)) * 100.0,
+        "VisualAura": min(100.0, _safe_float(sample_row.get("Visual", 0)) * 50.0),
+        "SensoryAura": min(100.0, _safe_float(sample_row.get("Sensory", 0)) * 50.0),
+        "Speech": min(100.0, _safe_float(sample_row.get("Dysphasia", 0)) * 100.0),
+        "Weakness": min(100.0, weakness * 100.0),
+        "Vertigo": _safe_float(sample_row.get("Vertigo", 0)) * 100.0,
+        "Tinnitus": _safe_float(sample_row.get("Tinnitus", 0)) * 100.0,
+        "MonoVisionLoss": _safe_float(sample_row.get("Defect", 0)) * 100.0,
+        ">72h": 100.0 if duration_over_72h else 0.0,
+        "Hormonal": _safe_float(sample_row.get("DPF", 0)) * 100.0,
     }
+
+
+def _add_symptom_profile_features(X: pd.DataFrame) -> pd.DataFrame:
+    """Add clinical similarity scores from sysmptoms.txt as model features."""
+    if not os.path.isfile(SYMPTOMS_PATH):
+        return X
+
+    profiles = _load_symptom_profiles(SYMPTOMS_PATH)
+    out = X.copy()
+    score_rows = []
+    for _, row in out.iterrows():
+        signal = _extract_patient_signal(row)
+        scores = {}
+        for migraine_type, profile in profiles.items():
+            symptoms = profile["symptoms"]
+            if not symptoms:
+                score = 0.0
+            else:
+                matches = [
+                    1.0 - abs(signal.get(name, 0.0) - expected) / 100.0
+                    for name, expected in symptoms.items()
+                ]
+                score = float(np.clip(np.mean(matches), 0.0, 1.0))
+            scores[f"profile_score_{migraine_type}"] = score
+        score_rows.append(scores)
+
+    score_df = pd.DataFrame(score_rows, index=out.index)
+    return pd.concat([out, score_df], axis=1)
 
 
 def _impact_from_symptoms(symptoms: dict, patient_signal: dict) -> dict:
@@ -329,65 +385,50 @@ def step0_prepare_pipeline_csv(raw_path: str, output_path: str) -> str:
     return output_path
 
 
-def step0_augment_with_ctgan(
+def step0_generate_practical_data(
     input_path: str,
-    legacy_output_path: str,
-    training_output_path: str,
-    per_class: int = CTGAN_PER_CLASS,
-    epochs: int = CTGAN_EPOCHS,
+    output_path: str,
+    per_class: int = AUGMENT_PER_CLASS,
     seed: int = RANDOM_STATE,
 ) -> str:
-    """Step 0.5: CTGAN data augmentation, then convert augmented rows for training."""
+    """Step 0.5: Combine real rows with profile-based synthetic migraine data."""
     print("\n" + "=" * 60)
-    print("Step 0.5: CTGAN data augmentation (expand_migraine_ctgan)")
+    print("Step 0.5: Practical data generation (generate_synthetic_migraine_data)")
     print("=" * 60)
     if not os.path.isfile(input_path):
-        raise FileNotFoundError(f"CTGAN input file not found: {input_path}")
+        raise FileNotFoundError(f"Training source CSV not found: {input_path}")
 
-    expand_with_ctgan(
-        input_path=Path(input_path),
-        output_path=Path(legacy_output_path),
+    converted = build_training_dataset(
+        Path(input_path),
+        Path(output_path),
         per_class=per_class,
-        epochs=epochs,
+        weak_class_extra=WEAK_CLASS_EXTRA_ROWS,
+        weak_class_real_threshold=WEAK_CLASS_REAL_THRESHOLD,
         seed=seed,
+        pipeline_ready=True,
     )
-
-    df = pd.read_csv(legacy_output_path)
-    converted = convert_migraine_data(df)
-    converted.to_csv(training_output_path, index=False)
-    print(f"  Prepared augmented training CSV -> {training_output_path}")
+    print(f"  Wrote training CSV -> {output_path}")
     print(f"  Rows: {len(converted)}, columns: {len(converted.columns)}")
-    return training_output_path
+    return output_path
 
 
 def _run_data_stages(
     raw_path: str | None = None,
     *,
-    prepare_data: bool = True,
+    prepare_data: bool = False,
     augment_data: bool = True,
-    ctgan_per_class: int = CTGAN_PER_CLASS,
-    ctgan_epochs: int = CTGAN_EPOCHS,
+    per_class: int = AUGMENT_PER_CLASS,
 ) -> str:
     """Run Step 0 and/or Step 0.5; return the CSV path to use for training."""
     raw = raw_path or DEFAULT_RAW_DATA_PATH
-    prepared_path = PREPARED_DATA_PATH
-    ctgan_input = raw
-
-    if prepare_data:
-        step0_prepare_pipeline_csv(raw, prepared_path)
-        ctgan_input = prepared_path
 
     if augment_data:
-        return step0_augment_with_ctgan(
-            ctgan_input,
-            CTGAN_LEGACY_PATH,
-            SYNTHETIC_DATA_PATH,
-            per_class=ctgan_per_class,
-            epochs=ctgan_epochs,
-            seed=RANDOM_STATE,
-        )
+        return step0_generate_practical_data(raw, TRAINING_DATA_PATH, per_class=per_class)
 
-    return prepared_path if prepare_data else raw
+    if prepare_data:
+        return step0_prepare_pipeline_csv(raw, PREPARED_DATA_PATH)
+
+    return raw
 
 
 def step1_load_data(path=None, data_dir=None):
@@ -414,17 +455,32 @@ def step1_load_data(path=None, data_dir=None):
     return df
 
 
-def step2_prepare_features_and_target(df, target_col, one_hot_target_cols=None):
-    """Steps 2–4: Define target, engineer features, impute, one-hot encode, encode target."""
-    print("\n" + "=" * 60)
-    print("Steps 2–4: Prepare features and target")
-    print("=" * 60)
-    # Build target labels and drop target columns from features
+def _resolve_target_spec(df: pd.DataFrame) -> tuple[str | None, list[str]]:
+    one_hot_target_cols = [c for c in ONE_HOT_TARGET_COLS if c in df.columns]
+    legacy_one_hot_target_cols = [c for c in LEGACY_ONE_HOT_TARGET_COLS if c in df.columns]
+    if len(one_hot_target_cols) >= 2:
+        return None, one_hot_target_cols
+    if len(legacy_one_hot_target_cols) >= 2:
+        return None, legacy_one_hot_target_cols
+    if "MigraineType" in df.columns:
+        return "MigraineType", []
+    if TARGET in df.columns:
+        return TARGET, []
+    raise ValueError(
+        "No target column found. Expected one-hot columns "
+        f"{ONE_HOT_TARGET_COLS}, or 'MigraineType', or 'Type'."
+    )
+
+
+def _extract_features_and_target(
+    df: pd.DataFrame,
+    target_col: str | None,
+    one_hot_target_cols: list[str] | None = None,
+) -> tuple[pd.DataFrame, pd.Series]:
     using_one_hot_targets = bool(one_hot_target_cols)
     if using_one_hot_targets:
         one_hot_df = df[one_hot_target_cols].copy()
         one_hot_df = one_hot_df.apply(pd.to_numeric, errors="coerce").fillna(0)
-        # If no positive class in a row, fallback to first configured class for stability.
         no_positive = one_hot_df.sum(axis=1) <= 0
         if no_positive.any():
             one_hot_df.loc[no_positive, one_hot_target_cols[0]] = 1
@@ -434,50 +490,113 @@ def step2_prepare_features_and_target(df, target_col, one_hot_target_cols=None):
         y_series = df[target_col].astype(str)
         drop_cols = [target_col]
 
-    # Drop target columns and any ID columns so they are not used as features.
-    # This prevents leakage when CSVs carry legacy or alternate one-hot target sets.
     known_target_cols = set(ONE_HOT_TARGET_COLS) | set(LEGACY_ONE_HOT_TARGET_COLS) | {TARGET, "MigraineType"}
     drop_cols.extend([c for c in known_target_cols if c in df.columns])
-
-    # Drop target and any ID columns (patient_id, attack_id) so they are not used as features
     for c in ID_COLS:
         if c in df.columns:
             drop_cols.append(c)
+
     X = df.drop(columns=[c for c in drop_cols if c in df.columns]).copy()
+    X = apply_engineered_features(X, symptoms_path=SYMPTOMS_PATH)
+    return X, y_series
 
-    # Feature engineering
-    if "Intensity" in X.columns and "Frequency" in X.columns:
-        X["Intensity_x_Freq"] = X["Intensity"] * X["Frequency"]
-    aura_cols = [c for c in ["Visual", "Sensory", "Dysphasia"] if c in X.columns]
-    if aura_cols:
-        X["has_aura"] = (X[aura_cols].sum(axis=1) > 0).astype(int)
 
-    # Impute missing values before encoding
+def _fit_feature_frame(X: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
-    # Only treat columns as categorical if they are non-numeric or explicitly non-numeric in the data
     detected_cat_cols = X.select_dtypes(include=["object", "category"]).columns.tolist()
     explicit_cat_cols = [c for c in CATEGORICAL_COLS if c in X.columns and c not in numeric_cols]
     categorical_cols = list({*detected_cat_cols, *explicit_cat_cols})
 
+    X_out = X.copy()
     num_imputer = None
     if numeric_cols:
         num_imputer = SimpleImputer(strategy="median")
-        X[numeric_cols] = num_imputer.fit_transform(X[numeric_cols])
+        X_out[numeric_cols] = num_imputer.fit_transform(X_out[numeric_cols])
 
     cat_imputer = None
     if categorical_cols:
         cat_imputer = SimpleImputer(strategy="constant", fill_value="missing")
-        X[categorical_cols] = cat_imputer.fit_transform(X[categorical_cols])
-        X[categorical_cols] = X[categorical_cols].astype(str)
+        X_out[categorical_cols] = cat_imputer.fit_transform(X_out[categorical_cols])
+        X_out[categorical_cols] = X_out[categorical_cols].astype(str)
+        X_out = pd.get_dummies(X_out, columns=categorical_cols, dummy_na=True)
 
-    # One-hot encoding for categoricals
-    if categorical_cols:
-        X = pd.get_dummies(X, columns=categorical_cols, dummy_na=True)
+    artifacts = {
+        "numeric_cols": numeric_cols,
+        "categorical_cols": categorical_cols,
+        "num_imputer": num_imputer,
+        "cat_imputer": cat_imputer,
+        "feature_names": X_out.columns.tolist(),
+    }
+    return X_out, artifacts
 
+
+def _transform_feature_frame(X: pd.DataFrame, artifacts: dict) -> pd.DataFrame:
+    X_out = X.copy()
+    numeric_cols = [c for c in artifacts["numeric_cols"] if c in X_out.columns]
+    categorical_cols = [c for c in artifacts["categorical_cols"] if c in X_out.columns]
+
+    if numeric_cols and artifacts["num_imputer"] is not None:
+        X_out[numeric_cols] = artifacts["num_imputer"].transform(X_out[numeric_cols])
+
+    if categorical_cols and artifacts["cat_imputer"] is not None:
+        X_out[categorical_cols] = artifacts["cat_imputer"].transform(X_out[categorical_cols])
+        X_out[categorical_cols] = X_out[categorical_cols].astype(str)
+        X_out = pd.get_dummies(X_out, columns=categorical_cols, dummy_na=True)
+
+    return X_out.reindex(columns=artifacts["feature_names"], fill_value=0)
+
+
+def step2_prepare_features_and_target(df, target_col, one_hot_target_cols=None):
+    """Steps 2–4: Define target, engineer features, impute, one-hot encode, encode target."""
+    print("\n" + "=" * 60)
+    print("Steps 2–4: Prepare features and target")
+    print("=" * 60)
+    X_raw, y_series = _extract_features_and_target(df, target_col, one_hot_target_cols)
+    X, artifacts = _fit_feature_frame(X_raw)
     y_encoder = LabelEncoder()
     y = y_encoder.fit_transform(y_series)
     print(f"  Features shape: {X.shape}, target shape: {y.shape}")
-    return X, y, y_encoder, num_imputer, cat_imputer
+    return X, y, y_encoder, artifacts["num_imputer"], artifacts["cat_imputer"]
+
+
+def step2_prepare_explicit_train_test(
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray, LabelEncoder, SimpleImputer | None, SimpleImputer | None]:
+    """Prepare train/test CSVs without fitting feature preprocessing on test data."""
+    print("\n" + "=" * 60)
+    print("Steps 2–4: Prepare explicit train/test data")
+    print("=" * 60)
+
+    train_target_col, train_one_hot_cols = _resolve_target_spec(train_df)
+    test_target_col, test_one_hot_cols = _resolve_target_spec(test_df)
+    X_train_raw, y_train_series = _extract_features_and_target(train_df, train_target_col, train_one_hot_cols)
+    X_test_raw, y_test_series = _extract_features_and_target(test_df, test_target_col, test_one_hot_cols)
+
+    X_train, artifacts = _fit_feature_frame(X_train_raw)
+    X_test = _transform_feature_frame(X_test_raw, artifacts)
+
+    y_encoder = LabelEncoder()
+    y_encoder.fit(pd.concat([y_train_series, y_test_series], ignore_index=True).astype(str))
+    y_train = y_encoder.transform(y_train_series.astype(str))
+    y_test = y_encoder.transform(y_test_series.astype(str))
+
+    print(f"  Train features: {X_train.shape}, target: {y_train.shape}")
+    print(f"  Test features: {X_test.shape}, target: {y_test.shape}")
+    train_classes = sorted(set(y_train_series.astype(str)))
+    unseen_test_classes = sorted(set(y_test_series.astype(str)) - set(train_classes))
+    if unseen_test_classes:
+        print("  Warning: test contains classes not present in training:")
+        print(f"    {unseen_test_classes}")
+    return (
+        X_train,
+        X_test,
+        y_train,
+        y_test,
+        y_encoder,
+        artifacts["num_imputer"],
+        artifacts["cat_imputer"],
+    )
 
 
 def step5_split(X, y, df=None, stratify_by_patient=False):
@@ -522,7 +641,7 @@ def step5_split(X, y, df=None, stratify_by_patient=False):
     return X_train, X_test, y_train, y_test, train_idx, test_idx
 
 
-def step6_train(X_train, y_train, X_test, y_test):
+def step6_train(X_train, y_train, X_test, y_test, y_encoder):
     """Step 6: Train XGBoost."""
     print("\n" + "=" * 60)
     print("Step 6: Train XGBoost")
@@ -538,7 +657,14 @@ def step6_train(X_train, y_train, X_test, y_test):
         y=y_train_local,
     )
     weight_map = dict(zip(np.unique(y_train_local), class_weights))
-    sample_weight = np.array([weight_map[c] for c in y_train_local])
+    for local_idx, original_class_id in enumerate(train_class_ids):
+        class_name = str(y_encoder.classes_[int(original_class_id)])
+        multiplier = WEAK_CLASS_WEIGHT_MULTIPLIER
+        if class_name == "Migraine_without_aura":
+            multiplier = 2.6
+        if class_name in WEAK_RECALL_CLASSES or class_name == "Typical_aura_migraine":
+            weight_map[int(local_idx)] = weight_map.get(int(local_idx), 1.0) * multiplier
+    sample_weight = np.array([weight_map[class_to_local[int(c)]] for c in y_train], dtype=float)
 
     device = _xgb_device()
     print(f"  GPU: {'Yes' if device == 'cuda' else 'No'}  (XGBoost device={device})")
@@ -548,13 +674,13 @@ def step6_train(X_train, y_train, X_test, y_test):
         eval_metric="mlogloss",
         use_label_encoder=False,
         random_state=RANDOM_STATE,
-        n_estimators=600,
-        max_depth=6,
-        learning_rate=0.05,
+        n_estimators=900,
+        max_depth=3,
+        learning_rate=0.04,
         subsample=0.9,
         colsample_bytree=0.9,
         min_child_weight=1,
-        reg_lambda=1.0,
+        reg_lambda=2.0,
         verbosity=0,
         tree_method="hist",
         device=device,
@@ -576,20 +702,96 @@ def step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder, model_c
     test_acc = accuracy_score(y_test, y_pred_test)
     print(f"  Test accuracy: {test_acc:.4f}")
 
-    # Ensure report includes all classes even if some are missing in y_test
     all_labels = sorted(set(np.unique(y_test).tolist()) | set(np.unique(y_pred_test).tolist()))
+    target_names = [y_encoder.classes_[i] for i in all_labels]
     print(
         "\n  Classification report:\n",
         classification_report(
             y_test,
             y_pred_test,
             labels=all_labels,
-            target_names=[y_encoder.classes_[i] for i in all_labels],
+            target_names=target_names,
             zero_division=0,
         ),
     )
     print("  Confusion matrix:\n", confusion_matrix(y_test, y_pred_test, labels=all_labels))
-    return test_acc
+
+    precision, recall, f1, support = precision_recall_fscore_support(
+        y_test,
+        y_pred_test,
+        labels=all_labels,
+        zero_division=0,
+    )
+    macro_f1 = float(f1_score(y_test, y_pred_test, labels=all_labels, average="macro", zero_division=0))
+    per_class = {
+        str(target_names[i]): {
+            "precision": float(precision[i]),
+            "recall": float(recall[i]),
+            "f1": float(f1[i]),
+            "support": int(support[i]),
+        }
+        for i in range(len(all_labels))
+    }
+    weak_recalls = {
+        name: per_class[name]["recall"]
+        for name in per_class
+        if name in WEAK_RECALL_CLASSES
+    }
+    min_weak_recall = min(weak_recalls.values()) if weak_recalls else 0.0
+    min_recall = min((v["recall"] for v in per_class.values()), default=0.0)
+
+    checks = {
+        "accuracy": {"value": test_acc, "threshold": DEPLOY_MIN_ACCURACY, "pass": test_acc >= DEPLOY_MIN_ACCURACY},
+        "macro_f1": {"value": macro_f1, "threshold": DEPLOY_MIN_MACRO_F1, "pass": macro_f1 >= DEPLOY_MIN_MACRO_F1},
+        "min_class_recall": {
+            "value": min_recall,
+            "threshold": DEPLOY_MIN_CLASS_RECALL,
+            "pass": min_recall >= DEPLOY_MIN_CLASS_RECALL,
+        },
+        "weak_class_recall": {
+            "value": min_weak_recall,
+            "threshold": DEPLOY_MIN_CLASS_RECALL,
+            "pass": min_weak_recall >= DEPLOY_MIN_CLASS_RECALL,
+            "by_class": weak_recalls,
+        },
+        "artifacts_saved": {
+            "model": False,
+            "label_encoder": False,
+            "feature_columns": False,
+            "num_imputer": False,
+            "model_class_ids": False,
+        },
+    }
+    deployment_ready = all(
+        checks[key]["pass"]
+        for key in ("accuracy", "macro_f1", "min_class_recall", "weak_class_recall")
+    )
+
+    metrics = {
+        "accuracy": test_acc,
+        "macro_f1": macro_f1,
+        "min_class_recall": min_recall,
+        "min_weak_class_recall": min_weak_recall,
+        "per_class": per_class,
+        "weak_class_recall": weak_recalls,
+        "deployment_ready": deployment_ready,
+        "checks": checks,
+    }
+    os.makedirs(os.path.dirname(METRICS_EXPORT_PATH) or ".", exist_ok=True)
+    with open(METRICS_EXPORT_PATH, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+    print(f"  Exported metrics JSON -> {METRICS_EXPORT_PATH}")
+    print(f"  Deployment ready: {'yes' if deployment_ready else 'no'}")
+    if not deployment_ready:
+        print("  Deployment blockers:")
+        for name, check in checks.items():
+            if name == "artifacts_saved":
+                missing = [k for k, ok in check.items() if not ok]
+                if missing:
+                    print(f"    - missing artifacts: {missing}")
+            elif not check.get("pass", False):
+                print(f"    - {name}: {check.get('value', 0):.4f} < {check.get('threshold', 0):.4f}")
+    return metrics
 
 
 def step9_save(model, target_encoder, feature_names, num_imputer=None, cat_imputer=None, model_class_ids=None):
@@ -608,16 +810,50 @@ def step9_save(model, target_encoder, feature_names, num_imputer=None, cat_imput
     )
 
 
+def step10_finalize_deployment(metrics: dict) -> dict:
+    """Mark deployment readiness after artifacts are written."""
+    print("\n" + "=" * 60)
+    print("Step 10: Deployment validation")
+    print("=" * 60)
+    artifact_checks = {
+        "model": os.path.isfile("xgboost_patient_model.pkl"),
+        "label_encoder": os.path.isfile("label_encoder.pkl"),
+        "feature_columns": os.path.isfile(os.path.join("artifacts", "feature_columns.joblib")),
+        "num_imputer": os.path.isfile(os.path.join("artifacts", "num_imputer.joblib")),
+        "model_class_ids": os.path.isfile(os.path.join("artifacts", "model_class_ids.joblib")),
+        "metrics_json": os.path.isfile(METRICS_EXPORT_PATH),
+    }
+    metrics["checks"]["artifacts_saved"] = artifact_checks
+    metrics["deployment_ready"] = (
+        metrics.get("deployment_ready", False) and all(artifact_checks.values())
+    )
+    with open(METRICS_EXPORT_PATH, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+    print(f"  Artifacts: {sum(artifact_checks.values())}/{len(artifact_checks)} present")
+    print(f"  Deployment ready: {'yes' if metrics['deployment_ready'] else 'no'}")
+    if not metrics["deployment_ready"]:
+        print("  Remaining blockers:")
+        for name, check in metrics["checks"].items():
+            if name == "artifacts_saved":
+                missing = [k for k, ok in check.items() if not ok]
+                if missing:
+                    print(f"    - missing artifacts: {missing}")
+            elif isinstance(check, dict) and not check.get("pass", True):
+                print(f"    - {name}: {check.get('value', 0):.4f} < {check.get('threshold', 0):.4f}")
+    return metrics
+
+
 def run_pipeline(
     data_path=None,
     data_dir=None,
     stratify_by_patient=STRATIFY_BY_PATIENT,
     *,
+    train_data_path: str | None = None,
+    test_data_path: str | None = None,
     prepare_data: bool | None = None,
     augment_data: bool | None = None,
     raw_data_path: str | None = None,
-    ctgan_per_class: int = CTGAN_PER_CLASS,
-    ctgan_epochs: int = CTGAN_EPOCHS,
+    per_class: int = AUGMENT_PER_CLASS,
 ):
     """
     Run the full pipeline (Steps 0–9 when using default single-CSV flow).
@@ -626,17 +862,57 @@ def run_pipeline(
         data_path: Single CSV path (e.g. migraine_data.csv). Ignored if data_dir is set.
         data_dir: Folder with patient_*_migraine_attacks.csv; all are loaded and combined.
         stratify_by_patient: If True and data from data_dir, split by patient (test = unseen patients).
-        prepare_data: Run prepare_pipeline_csv on raw data (default True for default CSV flow).
-        augment_data: Run CTGAN augmentation (default True for default CSV flow).
-        raw_data_path: Source CSV for Steps 0–0.5 (default: model/text_data/migraine_data.csv).
-        ctgan_per_class: Target rows per migraine subtype after CTGAN augmentation.
-        ctgan_epochs: CTGAN training epochs.
+        train_data_path: CSV used only for model fitting.
+        test_data_path: CSV used only for evaluation.
+        prepare_data: Run prepare_pipeline_csv on raw data (default False when augmenting).
+        augment_data: Run profile-based augmentation (default True for default CSV flow).
+        raw_data_path: Real labeled CSV for Steps 0–0.5 (default: text_data/traning_data/migraine_data.csv).
+        per_class: Target rows per migraine subtype in the training dataset.
     """
     os.makedirs("artifacts", exist_ok=True)
 
+    if train_data_path or test_data_path:
+        if not train_data_path or not test_data_path:
+            raise ValueError("Both train_data_path and test_data_path are required for explicit train/test mode.")
+        print("\n" + "=" * 60)
+        print("Explicit train/test mode")
+        print("=" * 60)
+        train_df = step1_load_data(path=train_data_path)
+        test_df = step1_load_data(path=test_data_path)
+        train_df = convert_migraine_data(train_df)
+        test_df = convert_migraine_data(test_df)
+        print("  Normalized train/test labels to canonical pipeline format.")
+        X_train, X_test, y_train, y_test, y_encoder, num_imputer, cat_imputer = step2_prepare_explicit_train_test(
+            train_df,
+            test_df,
+        )
+        model, model_class_ids = step6_train(X_train, y_train, X_test, y_test, y_encoder)
+        metrics = step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder, model_class_ids)
+        step9_save(
+            model,
+            y_encoder,
+            X_train.columns.tolist(),
+            num_imputer=num_imputer,
+            cat_imputer=cat_imputer,
+            model_class_ids=model_class_ids,
+        )
+        step10_finalize_deployment(metrics)
+        _export_patient_analytics_json(
+            model,
+            X_test,
+            y_encoder,
+            test_df.reset_index(drop=True),
+            np.arange(len(test_df)),
+            model_class_ids=model_class_ids,
+        )
+        print("\n" + "=" * 60)
+        print("Pipeline finished. Use predictModel.py for inference.")
+        print("=" * 60)
+        return
+
     use_default_csv_flow = data_dir is None and data_path is None
     if prepare_data is None:
-        prepare_data = use_default_csv_flow
+        prepare_data = False
     if augment_data is None:
         augment_data = use_default_csv_flow
 
@@ -645,11 +921,10 @@ def run_pipeline(
             raw_data_path,
             prepare_data=prepare_data,
             augment_data=augment_data,
-            ctgan_per_class=ctgan_per_class,
-            ctgan_epochs=ctgan_epochs,
+            per_class=per_class,
         )
     elif data_dir is None and data_path is None:
-        data_path = SYNTHETIC_DATA_PATH if os.path.isfile(SYNTHETIC_DATA_PATH) else DATA_PATH
+        data_path = TRAINING_DATA_PATH if os.path.isfile(TRAINING_DATA_PATH) else DATA_PATH
 
     df = step1_load_data(path=data_path or DATA_PATH, data_dir=data_dir)
 
@@ -678,8 +953,8 @@ def run_pipeline(
     X_train, X_test, y_train, y_test, _train_idx, test_idx = step5_split(
         X, y, df=df, stratify_by_patient=stratify_by_patient and "patient_id" in df.columns
     )
-    model, model_class_ids = step6_train(X_train, y_train, X_test, y_test)
-    step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder, model_class_ids)
+    model, model_class_ids = step6_train(X_train, y_train, X_test, y_test, y_encoder)
+    metrics = step7_8_evaluate(model, X_train, X_test, y_train, y_test, y_encoder, model_class_ids)
     step9_save(
         model,
         y_encoder,
@@ -688,6 +963,7 @@ def run_pipeline(
         cat_imputer=cat_imputer,
         model_class_ids=model_class_ids,
     )
+    step10_finalize_deployment(metrics)
     _export_patient_analytics_json(model, X_test, y_encoder, df, test_idx, model_class_ids=model_class_ids)
 
     print("\n" + "=" * 60)
@@ -703,26 +979,32 @@ if __name__ == "__main__":
         "path",
         nargs="?",
         default=None,
-        help="CSV file or Data folder (optional; default runs prepare + CTGAN + train)",
+        help="CSV file or Data folder (optional; default runs augment + train)",
     )
     parser.add_argument("--skip-prep", action="store_true", help="Skip Step 0 (prepare_pipeline_csv)")
-    parser.add_argument("--skip-ctgan", action="store_true", help="Skip Step 0.5 (CTGAN augmentation)")
-    parser.add_argument("--raw-data", default=None, help="Raw source CSV for Steps 0–0.5")
-    parser.add_argument("--per-class", type=int, default=CTGAN_PER_CLASS, help="CTGAN rows per subtype")
-    parser.add_argument("--ctgan-epochs", type=int, default=CTGAN_EPOCHS, help="CTGAN training epochs")
+    parser.add_argument("--skip-augment", action="store_true", help="Skip Step 0.5 (profile-based augmentation)")
+    parser.add_argument("--raw-data", default=None, help="Real labeled CSV for Steps 0–0.5")
+    parser.add_argument("--train-data", default=None, help="CSV to fit the model on")
+    parser.add_argument("--test-data", default=None, help="CSV to evaluate the model on")
+    parser.add_argument("--per-class", type=int, default=AUGMENT_PER_CLASS, help="Training rows per subtype")
     parser.add_argument("--no-stratify-patient", action="store_true", help="Disable patient-level split")
     args = parser.parse_args()
 
     pipeline_kwargs = {
-        "prepare_data": not args.skip_prep,
-        "augment_data": not args.skip_ctgan,
+        "prepare_data": not args.skip_prep and args.skip_augment,
+        "augment_data": not args.skip_augment,
         "raw_data_path": args.raw_data,
-        "ctgan_per_class": args.per_class,
-        "ctgan_epochs": args.ctgan_epochs,
+        "per_class": args.per_class,
         "stratify_by_patient": not args.no_stratify_patient,
     }
 
-    if args.path:
+    if args.train_data or args.test_data:
+        run_pipeline(
+            train_data_path=args.train_data,
+            test_data_path=args.test_data,
+            stratify_by_patient=pipeline_kwargs["stratify_by_patient"],
+        )
+    elif args.path:
         if os.path.isdir(args.path):
             run_pipeline(data_dir=args.path, prepare_data=False, augment_data=False, stratify_by_patient=pipeline_kwargs["stratify_by_patient"])
         elif os.path.isfile(args.path):
